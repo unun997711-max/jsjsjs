@@ -1,0 +1,2486 @@
+name: Build Neon Arena APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Create project
+        run: |
+          mkdir -p game && cd game
+          npm init -y
+          npm i three@0.160.0 @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          mkdir -p www/lib www/js
+          cp node_modules/three/build/three.module.js www/lib/
+          cp -r node_modules/three/examples/jsm www/lib/jsm
+
+      - name: Write index.html
+        run: |
+          cat > game/www/index.html <<'EOF_HTML'
+          <!DOCTYPE html>
+          <html>
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+          <title>Neon Arena</title>
+          <style>
+          *{box-sizing:border-box}
+          html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:system-ui,sans-serif;color:#0ff}
+          canvas{display:block}
+          #hud{position:fixed;inset:0;pointer-events:none}
+          .st{position:absolute;font-weight:700;text-shadow:0 0 8px #0ff;font-size:15px}
+          .bar{height:11px;border:1px solid #0ff8;background:#0008;width:190px}
+          .bar>div{height:100%;width:100%}
+          #hp{left:14px;top:14px}
+          #hpb{background:#ff2a5f;box-shadow:0 0 10px #ff2a5f}
+          #sh{left:14px;top:32px}
+          #shb{background:#0ff;box-shadow:0 0 10px #0ff}
+          #sc{right:14px;top:12px;font-size:18px}
+          #wv{left:0;right:0;top:40px;text-align:center;font-size:24px;color:#f0f;text-shadow:0 0 14px #f0f}
+          #ammo{right:14px;top:40px;font-size:26px;color:#fff}
+          #wpn{right:14px;top:72px;color:#f0f;font-size:13px}
+          #kf{left:14px;top:60px;font-size:12px;line-height:1.5;color:#fff}
+          #radar{position:absolute;left:50%;top:8px;margin-left:-190px;width:90px;height:90px;border-radius:50%;border:1px solid #0ff8;background:#0006;box-shadow:0 0 12px #0ff4}
+          #cross{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px}
+          #cross:before,#cross:after{content:"";position:absolute;background:#f0f;box-shadow:0 0 6px #f0f}
+          #cross:before{left:10px;top:0;width:2px;height:22px}
+          #cross:after{top:10px;left:0;height:2px;width:22px}
+          #hitm{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px;border:2px solid #fff;transform:rotate(45deg);opacity:0}
+          #hit{position:absolute;inset:0;background:radial-gradient(transparent 45%,#f03);opacity:0}
+          #stick{position:absolute;left:4vw;bottom:8vh;width:130px;height:130px;border-radius:50%;border:2px solid #0ff8;background:#0ff1;pointer-events:auto;box-shadow:0 0 18px #0ff4}
+          #knob{position:absolute;left:35px;top:35px;width:60px;height:60px;border-radius:50%;background:#0ffa;box-shadow:0 0 14px #0ff}
+          .btn{position:absolute;pointer-events:auto;border-radius:50%;border:2px solid #f0f;background:#f0f2;color:#f0f;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;box-shadow:0 0 16px #f0f6}
+          .btn.c{border-color:#0ff;color:#0ff;background:#0ff2;box-shadow:0 0 16px #0ff6}
+          #fire{right:4vw;bottom:10vh;width:100px;height:100px;font-size:16px}
+          #jump{right:calc(4vw + 112px);bottom:5vh;width:66px;height:66px}
+          #rld{right:calc(4vw + 112px);bottom:calc(5vh + 78px);width:60px;height:60px}
+          #swp{right:4vw;bottom:calc(10vh + 112px);width:60px;height:60px}
+          #dash{right:calc(4vw + 112px);bottom:calc(5vh + 148px);width:60px;height:60px}
+          #msg{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(#102,#000e);text-align:center;font-size:17px;padding:20px}
+          #msg h1{font-size:40px;text-shadow:0 0 18px #0ff,0 0 40px #f0f;margin:0 0 8px;letter-spacing:6px}
+          #msg button{margin-top:16px;padding:12px 40px;font-size:20px;color:#0ff;background:none;border:2px solid #0ff;border-radius:8px;box-shadow:0 0 14px #0ff}
+          </style>
+          </head>
+          <body>
+          <div id="hud">
+            <div class="st bar" id="hp"><div id="hpb"></div></div>
+            <div class="st bar" id="sh"><div id="shb"></div></div>
+            <div class="st" id="sc">SCORE 0</div>
+            <div class="st" id="wv"></div>
+            <div class="st" id="ammo">30</div>
+            <div class="st" id="wpn">PULSE RIFLE</div>
+            <div class="st" id="kf"></div>
+            <canvas id="radar" width="180" height="180"></canvas>
+            <div id="cross"></div><div id="hitm"></div><div id="hit"></div>
+            <div id="stick"><div id="knob"></div></div>
+            <div class="btn" id="fire">FIRE</div>
+            <div class="btn c" id="jump">JUMP</div>
+            <div class="btn c" id="rld">RELOAD</div>
+            <div class="btn" id="swp">SWAP</div>
+            <div class="btn c" id="dash">DASH</div>
+          </div>
+          <div id="msg"><h1>NEON ARENA</h1><div id="mt">Loading...</div><button id="go">START</button></div>
+          <script type="importmap">{"imports":{"three":"./lib/three.module.js","three/addons/":"./lib/jsm/"}}</script>
+          <script>window.onerror=function(m,s,l){var e=document.getElementById('mt');if(e)e.textContent='Error: '+m+' ('+(s||'').split('/').pop()+':'+l+')';};</script>
+          <script type="module" src="./js/main.js"></script>
+          </body>
+          </html>
+          EOF_HTML
+
+      - name: Write core.js
+        run: |
+          cat > game/www/js/core.js <<'EOF_CORE'
+          import * as THREE from 'three';
+          import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+          import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+          import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+          import {ShaderPass} from 'three/addons/postprocessing/ShaderPass.js';
+          import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+          import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+          export {THREE};
+          export const R = 44;
+          export const V3 = THREE.Vector3;
+          export const $ = id => document.getElementById(id);
+          export const rnd = (a, b) => a + Math.random() * (b - a);
+          export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+          // ---------- renderer ----------
+          export const renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'});
+          renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+          renderer.setSize(innerWidth, innerHeight);
+          renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          renderer.toneMappingExposure = 1.2;
+          renderer.shadowMap.enabled = true;
+          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          document.body.prepend(renderer.domElement);
+
+          export const scene = new THREE.Scene();
+          scene.background = new THREE.Color(0x02010a);
+          scene.fog = new THREE.FogExp2(0x07051a, 0.021);
+          export const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.08, 700);
+          camera.rotation.order = 'YXZ';
+          scene.add(camera);
+
+          const pm = new THREE.PMREMGenerator(renderer);
+          scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+
+          // ---------- post processing ----------
+          const FX = {
+            uniforms: {tDiffuse: {value: null}, t: {value: 0}, hurt: {value: 0}},
+            vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+            fragmentShader: 'uniform sampler2D tDiffuse;uniform float t,hurt;varying vec2 vUv;' +
+              'float r(vec2 s){return fract(sin(dot(s,vec2(12.9898,78.233)))*43758.5453);}' +
+              'void main(){vec2 c=vUv-.5;float d=dot(c,c);vec2 o=c*d*.05*(1.+hurt*4.);' +
+              'vec3 col=vec3(texture2D(tDiffuse,vUv-o).r,texture2D(tDiffuse,vUv).g,texture2D(tDiffuse,vUv+o).b);' +
+              'col*=1.-d*1.4;col+=(r(vUv*(fract(t)+1.))-.5)*.035;col.r+=hurt*d*3.;' +
+              'gl_FragColor=vec4(col,1.);}'
+          };
+          const composer = new EffectComposer(renderer);
+          composer.addPass(new RenderPass(scene, camera));
+          export const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.1, 0.6, 0.18);
+          composer.addPass(bloom);
+          const fxPass = new ShaderPass(FX);
+          composer.addPass(fxPass);
+          composer.addPass(new OutputPass());
+          export const fxU = fxPass.uniforms;
+          export function render(t) {
+            fxU.t.value = t;
+            composer.render();
+          }
+          addEventListener('resize', () => {
+            renderer.setSize(innerWidth, innerHeight);
+            composer.setSize(innerWidth, innerHeight);
+            camera.aspect = innerWidth / innerHeight;
+            camera.updateProjectionMatrix();
+          });
+
+          // ---------- procedural textures ----------
+          function speckle(x, s, n, a) {
+            for (let i = 0; i < n; i++) {
+              const v = Math.random() * 255 | 0;
+              x.fillStyle = 'rgba(' + v + ',' + v + ',' + v + ',' + a + ')';
+              x.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 2, 1 + Math.random() * 2);
+            }
+          }
+          // mode 0 = albedo, 1 = bump, 2 = emissive
+          function panels(x, s, mode) {
+            const n = 2, p = s / n;
+            x.fillStyle = mode == 2 ? '#000' : mode == 1 ? '#999' : '#2a2e3a';
+            x.fillRect(0, 0, s, s);
+            if (mode < 2) speckle(x, s, s * 8, 0.07);
+            for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+              const px = i * p, py = j * p;
+              if (mode == 0) {
+                const g = x.createLinearGradient(px, py, px + p, py + p);
+                g.addColorStop(0, '#343a4a'); g.addColorStop(1, '#1a1d27');
+                x.fillStyle = g; x.fillRect(px + 5, py + 5, p - 10, p - 10);
+              }
+              x.lineWidth = mode == 2 ? 4 : 7;
+              x.strokeStyle = mode == 0 ? '#07080d' : mode == 1 ? '#000' : '#00d8ff';
+              if (mode != 2 || (i + j) % 2 == 0) x.strokeRect(px + 3, py + 3, p - 6, p - 6);
+              if (mode < 2) {
+                x.fillStyle = mode == 0 ? '#5b6275' : '#fff';
+                [[14, 14], [p - 14, 14], [14, p - 14], [p - 14, p - 14]].forEach(([a, b]) => {
+                  x.beginPath(); x.arc(px + a, py + b, 4, 0, 7); x.fill();
+                });
+              }
+              if (mode == 2 && (i * 2 + j) % 3 == 1) {
+                x.fillStyle = '#ff00c8'; x.fillRect(px + p * .3, py + p * .5 - 3, p * .4, 6);
+              }
+            }
+          }
+          const panelCv = [0, 1, 2].map(m => {
+            const c = document.createElement('canvas'); c.width = c.height = 512;
+            panels(c.getContext('2d'), 512, m); return c;
+          });
+          export function panelTex(mode, rx, ry) {
+            const t = new THREE.CanvasTexture(panelCv[mode]);
+            t.wrapS = t.wrapT = THREE.RepeatWrapping;
+            t.repeat.set(rx, ry); t.anisotropy = 8;
+            if (mode != 1) t.colorSpace = THREE.SRGBColorSpace;
+            return t;
+          }
+          export function hazardTex() {
+            const c = document.createElement('canvas'); c.width = c.height = 128;
+            const x = c.getContext('2d');
+            x.fillStyle = '#15151a'; x.fillRect(0, 0, 128, 128);
+            x.fillStyle = '#e8b400';
+            for (let i = -128; i < 256; i += 32) {
+              x.beginPath(); x.moveTo(i, 0); x.lineTo(i + 16, 0); x.lineTo(i + 16 + 128, 128); x.lineTo(i + 128, 128); x.fill();
+            }
+            const t = new THREE.CanvasTexture(c);
+            t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t;
+          }
+          export function windowsTex() {
+            const c = document.createElement('canvas'); c.width = 128; c.height = 256;
+            const x = c.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 128, 256);
+            const cols = ['#00e5ff', '#ff00c8', '#ffd24a', '#7a5cff'];
+            for (let i = 0; i < 16; i++) for (let j = 0; j < 40; j++) {
+              if (Math.random() < 0.35) { x.fillStyle = cols[Math.random() * 4 | 0]; x.fillRect(i * 8 + 1, j * 6.4 + 1, 5, 3.5); }
+            }
+            const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+          }
+
+          // ---------- materials ----------
+          export const neon = (c, i = 3) => new THREE.MeshStandardMaterial({color: 0x000000, emissive: c, emissiveIntensity: i, toneMapped: false});
+          export const M = {
+            metal: new THREE.MeshStandardMaterial({color: 0x454c60, metalness: 0.9, roughness: 0.32, envMapIntensity: 0.9}),
+            dark: new THREE.MeshStandardMaterial({color: 0x1b1e28, metalness: 0.8, roughness: 0.4, envMapIntensity: 0.7}),
+            armor: new THREE.MeshStandardMaterial({color: 0x6a1030, metalness: 0.85, roughness: 0.28, envMapIntensity: 1}),
+            chrome: new THREE.MeshStandardMaterial({color: 0xcfd6e6, metalness: 1, roughness: 0.15, envMapIntensity: 1.2}),
+            glass: new THREE.MeshStandardMaterial({color: 0x66ccff, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.28}),
+            rubber: new THREE.MeshStandardMaterial({color: 0x0c0c10, metalness: 0.1, roughness: 0.9}),
+            floor: new THREE.MeshStandardMaterial({
+              color: 0xffffff, map: panelTex(0, R / 4, R / 4), bumpMap: panelTex(1, R / 4, R / 4), bumpScale: 3,
+              emissiveMap: panelTex(2, R / 4, R / 4), emissive: 0xffffff, emissiveIntensity: 1.1,
+              metalness: 0.85, roughness: 0.28, envMapIntensity: 0.6
+            }),
+            wall(rx, ry) {
+              return new THREE.MeshStandardMaterial({
+                color: 0xffffff, map: panelTex(0, rx, ry), bumpMap: panelTex(1, rx, ry), bumpScale: 3,
+                emissiveMap: panelTex(2, rx, ry), emissive: 0xffffff, emissiveIntensity: 0.9,
+                metalness: 0.8, roughness: 0.4, envMapIntensity: 0.6
+              });
+            }
+          };
+
+          // ---------- geometry helpers ----------
+          export function bevelBox(w, h, d, r = 0.05, seg = 3) {
+            const s = new THREE.Shape(), a = w / 2 - r, b = h / 2 - r;
+            s.moveTo(-a, -b); s.lineTo(a, -b); s.lineTo(a, b); s.lineTo(-a, b); s.closePath();
+            const g = new THREE.ExtrudeGeometry(s, {depth: Math.max(0.001, d - 2 * r), bevelEnabled: true, bevelThickness: r, bevelSize: r, bevelSegments: seg, curveSegments: 1});
+            g.center(); return g;
+          }
+          export function lathe(pts, seg = 32) {
+            return new THREE.LatheGeometry(pts.map(p => new THREE.Vector2(p[0], p[1])), seg);
+          }
+          export function mesh(geo, mat, x = 0, y = 0, z = 0, parent = scene, shadow = true) {
+            const m = new THREE.Mesh(geo, mat);
+            m.position.set(x, y, z); m.castShadow = shadow; m.receiveShadow = true;
+            if (parent) parent.add(m);
+            return m;
+          }
+          let _gs;
+          export function glowSprite(color, size) {
+            if (!_gs) {
+              const c = document.createElement('canvas'); c.width = c.height = 128;
+              const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+              g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,.4)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+              x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+              _gs = new THREE.CanvasTexture(c);
+            }
+            const s = new THREE.Sprite(new THREE.SpriteMaterial({map: _gs, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true}));
+            s.scale.set(size, size, 1); return s;
+          }
+          EOF_CORE
+
+      - name: Write world.js
+        run: |
+          cat > game/www/js/world.js <<'EOF_WORLD'
+          import {THREE, R, V3, scene, M, neon, bevelBox, lathe, mesh, glowSprite, hazardTex, windowsTex, rnd, panelTex} from './core.js';
+
+          export const colliders = [];   // circles {x, z, r}
+          export const pointLights = []; // pulsing arena lights
+          export const sun = new THREE.DirectionalLight(0x6f7dff, 1.3);
+          const anim = [];
+          let skyMat, embers, emberVel, reactorLight, beam;
+
+          function addCollider(x, z, r) { colliders.push({x, z, r}); }
+
+          function buildSky() {
+            skyMat = new THREE.ShaderMaterial({
+              side: THREE.BackSide, depthWrite: false, fog: false,
+              uniforms: {t: {value: 0}},
+              vertexShader: 'varying vec3 vP;void main(){vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+              fragmentShader:
+                'varying vec3 vP;uniform float t;' +
+                'float h(vec3 p){p=fract(p*.3183+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}' +
+                'float n(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);' +
+                'return mix(mix(mix(h(i),h(i+vec3(1,0,0)),f.x),mix(h(i+vec3(0,1,0)),h(i+vec3(1,1,0)),f.x),f.y),' +
+                'mix(mix(h(i+vec3(0,0,1)),h(i+vec3(1,0,1)),f.x),mix(h(i+vec3(0,1,1)),h(i+vec3(1,1,1)),f.x),f.y),f.z);}' +
+                'void main(){vec3 d=normalize(vP);float y=d.y*.5+.5;vec3 c=mix(vec3(.02,0.,.06),vec3(0.,.03,.12),y);' +
+                'float f=n(d*3.+t*.01)*.6+n(d*7.)*.3+n(d*15.)*.1;' +
+                'c+=vec3(.55,0.,.8)*pow(f,3.)*smoothstep(0.,.6,y);c+=vec3(0.,.4,.7)*pow(n(d*4.+9.),4.)*.8;' +
+                'c+=vec3(1.,.2,.7)*smoothstep(.25,0.,abs(d.y-.02))*.18;' +
+                'c+=step(.985,h(floor(d*190.)))*vec3(.8,.9,1.);gl_FragColor=vec4(c,1.);}'
+            });
+            scene.add(new THREE.Mesh(new THREE.SphereGeometry(450, 32, 24), skyMat));
+          }
+
+          function buildFloor() {
+            const f = mesh(new THREE.PlaneGeometry(R * 2, R * 2), M.floor, 0, 0, 0, scene, false);
+            f.rotation.x = -Math.PI / 2;
+            // glowing emblem rings in the centre of the arena
+            [[6, 6.25, 0x00ffff], [9.5, 9.7, 0xff00ff], [16, 16.15, 0x00ffff], [26, 26.2, 0xff00ff]].forEach(([a, b, c]) => {
+              const r = mesh(new THREE.RingGeometry(a, b, 96), neon(c, 2.2), 0, 0.02, 0, scene, false);
+              r.rotation.x = -Math.PI / 2;
+            });
+            for (let i = 0; i < 12; i++) {
+              const a = i / 12 * Math.PI * 2;
+              const l = mesh(new THREE.PlaneGeometry(0.18, 8), neon(i % 2 ? 0xff00ff : 0x00ffff, 1.8), Math.cos(a) * 12.5, 0.03, Math.sin(a) * 12.5, scene, false);
+              l.rotation.x = -Math.PI / 2; l.rotation.z = -a + Math.PI / 2;
+            }
+          }
+
+          function buildWalls() {
+            const H = 16;
+            [[0, -R, R * 2, 1.5, 0], [0, R, R * 2, 1.5, Math.PI], [-R, 0, R * 2, 1.5, Math.PI / 2], [R, 0, R * 2, 1.5, -Math.PI / 2]].forEach(([x, z, w, d, ry]) => {
+              const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; scene.add(g);
+              mesh(new THREE.BoxGeometry(w, H, d), M.wall(w / 6, H / 6), 0, H / 2, 0, g);
+              // trim + glowing strips
+              [0.35, 6, 12, 15.6].forEach((y, i) => mesh(new THREE.BoxGeometry(w, 0.22, d + 0.25), neon(i % 2 ? 0xff00ff : 0x00ffff, 2.6), 0, y, 0, g, false));
+              // buttresses with neon slits and glass lamps
+              for (let i = -w / 2 + 6; i < w / 2; i += 11) {
+                mesh(bevelBox(2.4, H - 1, 1.2, 0.18), M.metal, i, H / 2, d / 2 + 0.3, g);
+                mesh(new THREE.BoxGeometry(0.2, H - 4, 0.12), neon(0x00ffff, 3.2), i, H / 2, d / 2 + 0.95, g, false);
+                const s = glowSprite(0x00ffff, 5); s.position.set(i, H - 3, d / 2 + 1.4); g.add(s);
+              }
+              // glowing windows between buttresses
+              for (let i = -w / 2 + 11.5; i < w / 2 - 5; i += 11) {
+                mesh(bevelBox(5, 2.2, 0.3, 0.08), M.glass, i, 9, d / 2 + 0.05, g, false);
+                mesh(new THREE.BoxGeometry(4.6, 0.12, 0.1), neon(0xff00ff, 2.8), i, 7.9, d / 2 + 0.12, g, false);
+              }
+            });
+            // wall to the wall collision is handled by the player clamp (R-1)
+          }
+
+          function buildTurbines() {
+            const bs = new THREE.Shape();
+            bs.moveTo(0, 0); bs.quadraticCurveTo(0.9, 1.2, 0.35, 3.2); bs.lineTo(-0.35, 3.2); bs.quadraticCurveTo(-0.9, 1.2, 0, 0);
+            const bg = new THREE.ExtrudeGeometry(bs, {depth: 0.06, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.05, bevelSegments: 2});
+            [[0, -R + 1, 0], [0, R - 1, Math.PI], [-R + 1, 0, Math.PI / 2], [R - 1, 0, -Math.PI / 2]].forEach(([x, z, ry]) => {
+              const g = new THREE.Group(); g.position.set(x, 9, z); g.rotation.y = ry; scene.add(g);
+              mesh(lathe([[0, 0], [3.7, 0], [3.9, .15], [3.9, .6], [3.6, .7], [0, .7]], 40), M.dark, 0, 0, -0.35, g).rotation.x = Math.PI / 2;
+              mesh(new THREE.TorusGeometry(3.6, 0.12, 12, 48), neon(0xff00ff, 2.5), 0, 0, 0.2, g, false);
+              const rot = new THREE.Group(); g.add(rot);
+              for (let i = 0; i < 8; i++) {
+                const b = mesh(bg, M.chrome, 0, 0, 0, rot); b.rotation.z = i / 8 * Math.PI * 2; b.scale.setScalar(0.95);
+              }
+              mesh(new THREE.SphereGeometry(0.55, 24, 16), neon(0x00ffff, 3), 0, 0, 0.1, rot, false);
+              anim.push((t, dt) => { rot.rotation.z += dt * 2.2; });
+            });
+          }
+
+          function buildPillars() {
+            const prof = [[2.1, 0], [2.1, .45], [1.6, .8], [1.45, 3], [1.7, 3.3], [1.45, 3.7], [1.35, 12], [1.9, 12.5], [1.5, 13.2], [0, 13.2]];
+            [[-15, -13], [15, -13], [-15, 13], [15, 13], [0, -27], [0, 27], [-29, 0], [29, 0]].forEach(([x, z], k) => {
+              const g = new THREE.Group(); g.position.set(x, 0, z); scene.add(g);
+              mesh(lathe(prof, 28), M.metal, 0, 0, 0, g);
+              [1.6, 4.2, 7, 10, 12.7].forEach((y, i) => {
+                const t = mesh(new THREE.TorusGeometry(1.55 + (i == 4 ? .35 : 0), .09, 10, 40), neon((i + k) % 2 ? 0xff00ff : 0x00ffff, 3), 0, y, 0, g, false);
+                t.rotation.x = Math.PI / 2;
+              });
+              for (let a = 0; a < 4; a++) {
+                const s = mesh(new THREE.BoxGeometry(.14, 6.5, .1), neon(0x00ffff, 3), Math.cos(a * Math.PI / 2) * 1.42, 7.5, Math.sin(a * Math.PI / 2) * 1.42, g, false);
+                s.rotation.y = -a * Math.PI / 2;
+              }
+              const sp = glowSprite(k % 2 ? 0xff00ff : 0x00ffff, 9); sp.position.y = 12.7; g.add(sp);
+              addCollider(x, z, 2.2);
+            });
+          }
+
+          function buildCover() {
+            const hz = hazardTex(); hz.repeat.set(2, 1);
+            const hm = new THREE.MeshStandardMaterial({map: hz, metalness: .6, roughness: .5});
+            // crates
+            [[-8, 6], [9, -7], [-22, -20], [21, 18], [-24, 15], [23, -17], [4, 17], [-5, -18]].forEach(([x, z], i) => {
+              const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = rnd(0, 3); scene.add(g);
+              mesh(bevelBox(2.2, 2.2, 2.2, .14), M.metal, 0, 1.1, 0, g);
+              mesh(bevelBox(2.3, .35, 2.3, .08), hm, 0, .2, 0, g);
+              mesh(bevelBox(2.3, .35, 2.3, .08), hm, 0, 2.0, 0, g);
+              mesh(new THREE.BoxGeometry(1.2, .1, .06), neon(i % 2 ? 0xff00ff : 0x00ffff, 3), 0, 1.1, 1.13, g, false);
+              addCollider(x, z, 1.5);
+            });
+            // long barriers with neon tops
+            [[-10, -6, .4], [11, 8, -.5], [-3, 24, 0], [3, -24, 0], [-27, 8, 1.57], [27, -8, 1.57]].forEach(([x, z, ry], i) => {
+              const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; scene.add(g);
+              mesh(bevelBox(6, 1.5, .8, .12), M.dark, 0, .75, 0, g);
+              mesh(new THREE.BoxGeometry(5.6, .1, .2), neon(i % 2 ? 0xff00ff : 0x00ffff, 3.2), 0, 1.5, 0, g, false);
+              mesh(bevelBox(6.2, .25, 1.1, .08), hm, 0, .12, 0, g);
+              for (let k = -1; k <= 1; k++) addCollider(x + Math.cos(ry) * k * 2, z - Math.sin(ry) * k * 2, 1.1);
+            });
+          }
+
+          function buildReactor() {
+            const g = new THREE.Group(); scene.add(g);
+            mesh(lathe([[4.2, 0], [4.2, .5], [3.4, 1], [3, 1.4], [2.2, 1.6], [0, 1.6]], 48), M.metal, 0, 0, 0, g);
+            mesh(new THREE.CylinderGeometry(1.1, 1.4, 5.5, 24, 1, true), M.glass, 0, 4.2, 0, g, false);
+            const core = mesh(new THREE.IcosahedronGeometry(.95, 2), neon(0x00ffff, 4), 0, 4.4, 0, g, false);
+            const rings = [0, 1, 2].map(i => {
+              const r = mesh(new THREE.TorusGeometry(1.9 + i * .55, .07, 10, 60), neon(i == 1 ? 0xff00ff : 0x00ffff, 3), 0, 4.4, 0, g, false);
+              r.rotation.set(i * 1.05, i * .6, 0); return r;
+            });
+            beam = mesh(new THREE.CylinderGeometry(.28, .28, 40, 16, 1, true), new THREE.MeshBasicMaterial({color: 0x00ffff, transparent: true, opacity: .22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide}), 0, 22, 0, g, false);
+            const sp = glowSprite(0x00ffff, 12); sp.position.y = 4.4; g.add(sp);
+            reactorLight = new THREE.PointLight(0x00ffff, 300, 36, 2); reactorLight.position.set(0, 5, 0); scene.add(reactorLight);
+            addCollider(0, 0, 4.3);
+            anim.push((t, dt) => {
+              rings.forEach((r, i) => { r.rotation.x += dt * (.8 + i * .5); r.rotation.y += dt * (1.1 - i * .3); });
+              core.scale.setScalar(1 + Math.sin(t * 3) * .08); core.rotation.y += dt;
+              reactorLight.intensity = 280 + Math.sin(t * 3) * 60; beam.material.opacity = .18 + Math.sin(t * 5) * .05;
+            });
+          }
+
+          function buildCity() {
+            const wt = windowsTex();
+            const wm = new THREE.MeshStandardMaterial({color: 0x08080f, emissive: 0xffffff, emissiveMap: wt, emissiveIntensity: 1.6, metalness: .5, roughness: .6, fog: false});
+            const bg = new THREE.BoxGeometry(1, 1, 1);
+            const im = new THREE.InstancedMesh(bg, wm, 110), m4 = new THREE.Matrix4();
+            for (let i = 0; i < 110; i++) {
+              const a = Math.random() * Math.PI * 2, d = rnd(75, 190), h = rnd(25, 120), w = rnd(8, 22);
+              m4.compose(new V3(Math.cos(a) * d, h / 2 - 4, Math.sin(a) * d), new THREE.Quaternion().setFromAxisAngle(new V3(0, 1, 0), a), new V3(w, h, w));
+              im.setMatrixAt(i, m4);
+            }
+            scene.add(im);
+          }
+
+          function buildEmbers() {
+            const n = 700, p = new Float32Array(n * 3); emberVel = new Float32Array(n);
+            for (let i = 0; i < n; i++) { p.set([rnd(-R, R), rnd(0, 20), rnd(-R, R)], i * 3); emberVel[i] = rnd(.3, 1.4); }
+            const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+            embers = new THREE.Points(g, new THREE.PointsMaterial({size: .13, color: 0x66ddff, transparent: true, opacity: .7, blending: THREE.AdditiveBlending, depthWrite: false}));
+            embers.frustumCulled = false; scene.add(embers);
+          }
+
+          export function buildWorld() {
+            scene.add(new THREE.AmbientLight(0x4a4a85, 1.0));
+            scene.add(new THREE.HemisphereLight(0x6688ff, 0x330044, .7));
+            sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+            const sc = sun.shadow.camera; sc.left = sc.bottom = -26; sc.right = sc.top = 26; sc.near = 1; sc.far = 90;
+            sun.shadow.bias = -0.0004; scene.add(sun); scene.add(sun.target);
+            [[0x00ffff, -20, -16], [0xff00ff, 20, -16], [0xff00ff, -20, 16], [0x00ffff, 20, 16]].forEach(([c, x, z]) => {
+              const l = new THREE.PointLight(c, 220, 38, 2); l.position.set(x, 6, z); scene.add(l); pointLights.push(l);
+            });
+            buildSky(); buildFloor(); buildWalls(); buildTurbines(); buildPillars(); buildCover(); buildReactor(); buildCity(); buildEmbers();
+          }
+
+          export function updateWorld(t, dt, px, pz) {
+            sun.position.set(px + 14, 34, pz + 10); sun.target.position.set(px, 0, pz);
+            pointLights.forEach((l, i) => l.intensity = 220 + 70 * Math.sin(t * 2 + i * 1.7));
+            anim.forEach(f => f(t, dt));
+            skyMat.uniforms.t.value = t;
+            const p = embers.geometry.attributes.position.array;
+            for (let i = 0; i < emberVel.length; i++) {
+              p[i * 3 + 1] += emberVel[i] * dt; p[i * 3] += Math.sin(t + i) * dt * .3;
+              if (p[i * 3 + 1] > 22) p[i * 3 + 1] = 0;
+            }
+            embers.geometry.attributes.position.needsUpdate = true;
+          }
+
+          // circle collision against every static collider
+          export function pushOut(p, r) {
+            for (const k of colliders) {
+              const dx = p.x - k.x, dz = p.z - k.z, d = Math.hypot(dx, dz), m = k.r + r;
+              if (d < m && d > 0.001) { p.x = k.x + dx / d * m; p.z = k.z + dz / d * m; }
+            }
+            p.x = Math.max(-R + 1.5, Math.min(R - 1.5, p.x));
+            p.z = Math.max(-R + 1.5, Math.min(R - 1.5, p.z));
+          }
+          EOF_WORLD
+      - name: Write weapons.js
+        run: |
+          cat > game/www/js/weapons.js <<'EOF_WEAPONS'
+          import {THREE, M, neon, bevelBox, mesh, lathe, glowSprite} from './core.js';
+
+          // ---------- weapon stats ----------
+          export const WEAPONS = [
+            {name: 'PULSE RIFLE', mag: 30, reserve: 240, rate: 0.085, dmg: 14, pellets: 1, spread: 0.010, reload: 1.55, auto: true,
+             recoil: 0.010, shake: 0.05, kick: 0.045, range: 220, color: 0x00ffff, light: 40, pickup: 60, pierce: false, falloff: false},
+            {name: 'SCATTER CANNON', mag: 8, reserve: 56, rate: 0.72, dmg: 12, pellets: 10, spread: 0.075, reload: 2.1, auto: false,
+             recoil: 0.055, shake: 0.28, kick: 0.2, range: 60, color: 0xff00ff, light: 90, pickup: 16, pierce: false, falloff: true},
+            {name: 'RAILGUN', mag: 4, reserve: 24, rate: 1.15, dmg: 130, pellets: 1, spread: 0, reload: 2.3, auto: false,
+             recoil: 0.07, shake: 0.4, kick: 0.26, range: 400, color: 0x8a6bff, light: 140, pickup: 6, pierce: true, falloff: false}
+          ];
+
+          // ---------- helpers ----------
+          const part = (geo, mat, x, y, z, p) => { const o = mesh(geo, mat, x, y, z, p, false); o.receiveShadow = false; return o; };
+          const cyl = (a, b, len, seg = 20) => { const g = new THREE.CylinderGeometry(a, b, len, seg); g.rotateX(Math.PI / 2); return g; };
+          const ring = (r, tube, mat, x, y, z, p) => part(new THREE.TorusGeometry(r, tube, 8, 28), mat, x, y, z, p);
+          const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+
+          // armored glove + forearm
+          function hand(g, x, y, z, left) {
+            const h = new THREE.Group(); h.position.set(x, y, z); g.add(h);
+            part(bevelBox(0.078, 0.05, 0.1, 0.014), M.rubber, 0, 0, 0, h);
+            for (let i = 0; i < 4; i++) {
+              const f = part(bevelBox(0.017, 0.022, 0.06, 0.006), M.rubber, -0.028 + i * 0.019, 0, -0.065, h);
+              f.rotation.x = 0.35;
+            }
+            const th = part(bevelBox(0.02, 0.022, 0.07, 0.007), M.rubber, left ? 0.05 : -0.05, 0.012, -0.03, h);
+            th.rotation.y = left ? -0.5 : 0.5;
+            part(bevelBox(0.074, 0.014, 0.06, 0.005), M.armor, 0, 0.03, -0.01, h);
+            part(box(0.05, 0.004, 0.004), neon(0x00ffff, 3), 0, 0.039, -0.01, h);
+            const fa = part(cyl(0.036, 0.046, 0.36, 16), M.armor, 0, -0.02, 0.26, h);
+            fa.rotation.x = 0.35;
+            const rg = ring(0.048, 0.005, neon(0x00ffff, 3.5), 0, -0.012, 0.13, h);
+            rg.rotation.x = 0.35;
+            const cf = part(cyl(0.05, 0.05, 0.05, 16), M.dark, 0, -0.03, 0.17, h);
+            cf.rotation.x = 0.35;
+            return h;
+          }
+
+          // common weapon rig: muzzle point, flash sprite, flash cone, dynamic light
+          function rig(mz, def) {
+            const g = new THREE.Group();
+            const muzzle = new THREE.Object3D(); muzzle.position.set(mz[0], mz[1], mz[2]); g.add(muzzle);
+            const flash = glowSprite(def.color, 0.55); flash.material.opacity = 0; muzzle.add(flash);
+            const cg = new THREE.ConeGeometry(0.035, 0.28, 10); cg.rotateX(-Math.PI / 2);
+            const cone = new THREE.Mesh(cg, new THREE.MeshBasicMaterial({
+              color: def.color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false
+            }));
+            cone.position.z = -0.14; muzzle.add(cone);
+            const light = new THREE.PointLight(def.color, 0, 16, 2); light.position.z = -0.2; muzzle.add(light);
+            const o = {group: g, muzzle, def, flashT: 0, anim: null};
+            o.fire = () => { o.flashT = 1; };
+            o.update = (t, dt, s) => {
+              o.flashT = Math.max(0, o.flashT - dt * 16);
+              const f = o.flashT;
+              flash.material.opacity = f;
+              flash.scale.setScalar(0.25 + f * 0.6 * (0.8 + Math.random() * 0.4));
+              cone.material.opacity = f * 0.9;
+              cone.scale.set(1 + f, 1 + f, 0.6 + f * 1.2);
+              cone.rotation.z = Math.random() * 6.28;
+              light.intensity = f * def.light;
+              if (o.anim) o.anim(t, dt, s, o);
+            };
+            return o;
+          }
+
+          // ---------- PULSE RIFLE ----------
+          function buildRifle(def) {
+            const c = def.color, mc = 0xff00ff;
+            const o = rig([0, 0.012, -1.0], def), g = o.group;
+            part(bevelBox(0.075, 0.105, 0.44, 0.02), M.dark, 0, 0, -0.08, g);
+            part(bevelBox(0.062, 0.035, 0.36, 0.012), M.metal, 0, 0.068, -0.1, g);
+            part(box(0.008, 0.006, 0.3), neon(c, 3), 0, 0.088, -0.1, g);
+            part(bevelBox(0.07, 0.08, 0.26, 0.016), M.metal, 0, 0.005, -0.42, g);
+            for (let i = 0; i < 4; i++) for (const s of [-1, 1]) {
+              part(box(0.004, 0.012, 0.03), neon(mc, 3), s * 0.036, 0.008, -0.33 - i * 0.055, g);
+            }
+            for (const s of [-1, 1]) part(box(0.004, 0.014, 0.32), neon(mc, 2.6), s * 0.0385, 0.012, -0.08, g);
+            part(cyl(0.018, 0.018, 0.34), M.chrome, 0, 0.012, -0.72, g);
+            const mb = part(lathe([[0, 0], [0.03, 0], [0.034, 0.02], [0.034, 0.07], [0.026, 0.09], [0, 0.09]], 20), M.dark, 0, 0.012, -0.9, g);
+            mb.rotation.x = -Math.PI / 2;
+            ring(0.031, 0.004, neon(c, 4), 0, 0.012, -0.95, g);
+            ring(0.027, 0.004, neon(mc, 3), 0, 0.012, -0.8, g);
+            // energy cell
+            part(bevelBox(0.058, 0.055, 0.17, 0.012), M.glass, 0, -0.065, -0.4, g);
+            const cellM = neon(c, 3);
+            part(box(0.03, 0.025, 0.13), cellM, 0, -0.065, -0.4, g);
+            // magazine, grip, stock
+            part(bevelBox(0.05, 0.15, 0.075, 0.012), M.dark, 0, -0.125, -0.02, g).rotation.x = 0.1;
+            part(box(0.052, 0.09, 0.008), neon(c, 2.5), 0, -0.12, -0.056, g);
+            part(bevelBox(0.05, 0.13, 0.065, 0.014), M.rubber, 0, -0.115, 0.14, g).rotation.x = -0.28;
+            part(bevelBox(0.06, 0.1, 0.22, 0.02), M.dark, 0, -0.01, 0.27, g);
+            part(bevelBox(0.066, 0.115, 0.03, 0.01), M.rubber, 0, -0.01, 0.39, g);
+            part(box(0.064, 0.006, 0.18), neon(mc, 2.4), 0, 0.042, 0.27, g);
+            // holo sight
+            part(bevelBox(0.05, 0.03, 0.07, 0.008), M.metal, 0, 0.1, -0.1, g);
+            part(bevelBox(0.044, 0.04, 0.006, 0.002), M.glass, 0, 0.13, -0.135, g);
+            part(new THREE.SphereGeometry(0.004, 8, 6), neon(mc, 6), 0, 0.13, -0.133, g);
+            for (const s of [-1, 1]) part(box(0.004, 0.04, 0.012), M.dark, s * 0.024, 0.125, -0.135, g);
+            // foregrip
+            part(bevelBox(0.04, 0.08, 0.05, 0.01), M.dark, 0, -0.1, -0.36, g);
+            hand(g, 0, -0.075, -0.42, true);
+            hand(g, 0, -0.13, 0.14, false);
+            o.anim = (t, dt, s) => { cellM.emissiveIntensity = 1.2 + 2.6 * s.ammo + Math.sin(t * 6) * 0.3; };
+            return o;
+          }
+
+          // ---------- SCATTER CANNON ----------
+          function buildScatter(def) {
+            const c = def.color, cy = 0x00ffff;
+            const o = rig([0, 0.03, -0.95], def), g = o.group;
+            part(bevelBox(0.115, 0.125, 0.28, 0.026), M.armor, 0, 0, -0.1, g);
+            part(bevelBox(0.09, 0.03, 0.2, 0.01), M.chrome, 0, 0.075, -0.1, g);
+            part(box(0.118, 0.006, 0.1), neon(c, 3), 0, 0.04, -0.1, g);
+            for (const s of [-1, 1]) {
+              part(cyl(0.026, 0.026, 0.62), M.chrome, s * 0.03, 0.03, -0.58, g);
+              part(cyl(0.032, 0.03, 0.05), M.dark, s * 0.03, 0.03, -0.9, g);
+              for (let i = 0; i < 3; i++) ring(0.032, 0.004, neon(c, 3.2), s * 0.03, 0.03, -0.42 - i * 0.17, g);
+              part(box(0.004, 0.05, 0.1), neon(cy, 2.5), s * 0.0585, 0, -0.1, g);
+            }
+            part(box(0.02, 0.012, 0.6), M.dark, 0, 0.062, -0.58, g);
+            // glass shell tube
+            part(cyl(0.02, 0.02, 0.5), M.glass, 0, -0.035, -0.55, g);
+            const tubeM = neon(cy, 2.5);
+            part(cyl(0.011, 0.011, 0.46), tubeM, 0, -0.035, -0.55, g);
+            // sliding pump
+            const pump = new THREE.Group(); pump.position.set(0, -0.06, -0.5); g.add(pump);
+            part(bevelBox(0.095, 0.065, 0.2, 0.02), M.dark, 0, 0, 0, pump);
+            part(box(0.098, 0.006, 0.16), neon(c, 3), 0, 0.034, 0, pump);
+            for (let i = -2; i <= 2; i++) part(box(0.1, 0.01, 0.01), M.rubber, 0, -0.034, i * 0.035, pump);
+            // stock + grip
+            part(bevelBox(0.07, 0.14, 0.3, 0.03), M.dark, 0, -0.045, 0.22, g);
+            part(bevelBox(0.075, 0.15, 0.03, 0.012), M.rubber, 0, -0.05, 0.39, g);
+            part(bevelBox(0.05, 0.12, 0.065, 0.014), M.rubber, 0, -0.1, 0.06, g).rotation.x = -0.25;
+            part(box(0.008, 0.022, 0.008), neon(cy, 5), 0, 0.09, -0.88, g);
+            part(box(0.05, 0.008, 0.01), neon(c, 3), 0, 0.09, -0.02, g);
+            hand(g, 0, -0.085, -0.5, true);
+            hand(g, 0, -0.11, 0.07, false);
+            o.anim = (t, dt, s) => {
+              const k = Math.min(1, Math.max(0, (s.since - 0.15) / 0.4));
+              pump.position.z = -0.5 + Math.sin(k * Math.PI) * 0.14;
+              tubeM.emissiveIntensity = 0.8 + 2.4 * s.ammo;
+            };
+            return o;
+          }
+
+          // ---------- RAILGUN ----------
+          function buildRail(def) {
+            const c = def.color, cy = 0x00ffff;
+            const o = rig([0, 0.05, -1.0], def), g = o.group;
+            part(bevelBox(0.085, 0.095, 0.7, 0.022), M.dark, 0, 0, -0.18, g);
+            for (const s of [-1, 1]) {
+              part(bevelBox(0.024, 0.034, 0.86, 0.008), M.chrome, s * 0.034, 0.054, -0.42, g);
+              part(box(0.004, 0.006, 0.8), neon(c, 3.5), s * 0.034, 0.074, -0.42, g);
+            }
+            const coils = [];
+            for (let i = 0; i < 6; i++) {
+              const m = neon(c, 2); coils.push(m);
+              ring(0.058, 0.007, m, 0, 0.05, -0.2 - i * 0.14, g);
+            }
+            // capacitor
+            part(cyl(0.045, 0.045, 0.2), M.glass, 0, -0.005, 0.12, g);
+            const coreM = neon(cy, 3);
+            part(cyl(0.028, 0.028, 0.18), coreM, 0, -0.005, 0.12, g);
+            ring(0.047, 0.008, M.chrome, 0, -0.005, 0.02, g);
+            ring(0.047, 0.008, M.chrome, 0, -0.005, 0.22, g);
+            // barrel flare
+            const fl = part(lathe([[0, 0], [0.03, 0], [0.05, 0.04], [0.05, 0.1], [0.035, 0.12], [0, 0.12]], 24), M.dark, 0, 0.045, -0.86, g);
+            fl.rotation.x = -Math.PI / 2;
+            const cg = glowSprite(c, 0.16); cg.position.set(0, 0.05, -0.8); g.add(cg);
+            // scope
+            part(cyl(0.024, 0.024, 0.24), M.dark, 0, 0.125, -0.12, g);
+            ring(0.026, 0.004, neon(cy, 4), 0, 0.125, -0.245, g);
+            part(new THREE.CircleGeometry(0.02, 16), neon(cy, 2.5), 0, 0.125, -0.243, g);
+            part(bevelBox(0.02, 0.04, 0.02, 0.005), M.metal, 0, 0.095, -0.05, g);
+            part(bevelBox(0.02, 0.04, 0.02, 0.005), M.metal, 0, 0.095, -0.19, g);
+            // stock + grip
+            part(bevelBox(0.065, 0.12, 0.26, 0.02), M.dark, 0, -0.01, 0.36, g);
+            part(bevelBox(0.05, 0.12, 0.065, 0.014), M.rubber, 0, -0.11, 0.1, g).rotation.x = -0.28;
+            part(box(0.068, 0.006, 0.2), neon(c, 2.6), 0, 0.052, 0.36, g);
+            hand(g, 0, -0.075, -0.38, true);
+            hand(g, 0, -0.12, 0.1, false);
+            o.anim = (t, dt, s) => {
+              const ch = Math.min(1, s.since / def.rate) * (s.ammo > 0 ? 1 : 0.2);
+              coils.forEach((m, i) => { m.emissiveIntensity = 0.6 + 3.4 * ch * (0.65 + 0.35 * Math.sin(t * 9 - i * 0.9)); });
+              coreM.emissiveIntensity = 1.5 + 3.5 * ch;
+              cg.scale.setScalar(0.08 + 0.12 * ch);
+            };
+            return o;
+          }
+
+          // ---------- build all view-models ----------
+          export function buildWeapons(parent) {
+            const root = new THREE.Group(); root.scale.setScalar(0.85); parent.add(root);
+            const list = [buildRifle(WEAPONS[0]), buildScatter(WEAPONS[1]), buildRail(WEAPONS[2])];
+            list.forEach((w, i) => { w.group.visible = i === 0; root.add(w.group); });
+            return {root, list};
+          }
+          EOF_WEAPONS
+
+      - name: Write player.js
+        run: |
+          cat > game/www/js/player.js <<'EOF_PLAYER'
+          import {THREE, V3, R, camera, $, clamp, fxU, bloom} from './core.js';
+          import {pushOut, colliders} from './world.js';
+          import {WEAPONS, buildWeapons} from './weapons.js';
+
+          // ---------- public API ----------
+          // input: set by touch controls (Part 5). moveY: forward +1, moveX: right +1. jump/reload/swap/dash are one-shot flags.
+          export const input = {moveX: 0, moveY: 0, fire: false, jump: false, reload: false, swap: false, dash: false};
+          export const settings = {sens: 0.0042, assist: 0.35};
+          export const hooks = {};
+          ['onShot', 'onTracer', 'onImpact', 'onHit', 'onHurt', 'onDeath', 'onStep', 'onJump', 'onLand', 'onDash', 'onReload', 'onReloadDone', 'onSwap', 'onEmpty', 'onPickup']
+            .forEach(n => hooks[n] = () => {});
+          // enemies register here: {alive, pos: V3 (feet), r: body radius, h: height, hit(dmg, point, dir, head) -> true if killed}
+          export const targets = [];
+          export const player = {
+            pos: new V3(0, 0, 12), vel: new V3(), head: new V3(0, 1.7, 12), yaw: 0, pitch: 0,
+            hp: 100, maxHp: 100, shield: 100, maxShield: 100, onGround: true, dead: false, sprint: false, speed: 0, weapon: 0
+          };
+          export const ammo = WEAPONS.map(w => ({mag: w.mag, res: w.reserve}));
+
+          // ---------- internal state ----------
+          const BASE = {x: 0.17, y: -0.19, z: -0.3};
+          const SPAWN = new V3(0, 0, 12);
+          const _o = new V3(), _d = new V3(), _r = new V3(), _u = new V3(), _b = new V3(), _mz = new V3(), _p = new V3(), _n = new V3(), _q = new V3(), _e = new V3(), _wn = new V3();
+          let rig = null, cur = 0, E = null, hudKey = '';
+          let cd = 0, reloadT = -1, swapT = -1, swapTo = 0, sinceShot = 9, sinceHurt = 9, queued = 0, fireHeld = false;
+          let bobPh = 0, bobY = 0, bobX = 0, lastStep = 0, landDip = 0, tilt = 0, shake = 0, recoilP = 0, recoilY = 0;
+          let kick = 0, swayX = 0, swayY = 0, sprintB = 0, dashT = 0, dashCd = 0, dashDX = 0, dashDZ = -1, dashGlow = 0;
+          let hurtFx = 0, hmT = 0, deadT = 0, invuln = 0, fov = 75, lookDX = 0, lookDY = 0;
+
+          export function initPlayer() {
+            rig = buildWeapons(camera);
+            E = {hpb: $('hpb'), shb: $('shb'), ammo: $('ammo'), wpn: $('wpn'), hit: $('hit'), hitm: $('hitm'), dash: $('dash')};
+            resetPlayer();
+          }
+
+          export function resetPlayer() {
+            player.pos.copy(SPAWN); player.vel.set(0, 0, 0); player.yaw = 0; player.pitch = 0;
+            player.hp = player.maxHp; player.shield = player.maxShield; player.dead = false; player.onGround = true;
+            ammo.forEach((a, i) => { a.mag = WEAPONS[i].mag; a.res = WEAPONS[i].reserve; });
+            cur = 0; player.weapon = 0; cd = 0; reloadT = -1; swapT = -1; sinceShot = 9; sinceHurt = 9;
+            recoilP = recoilY = shake = kick = hurtFx = deadT = dashT = dashCd = 0; invuln = 1.5;
+            camera.rotation.set(0, 0, 0);
+            if (rig) rig.list.forEach((w, i) => w.group.visible = i === 0);
+            hudKey = '';
+          }
+
+          export function look(dx, dy) { lookDX += dx; lookDY += dy; }
+          export function addShake(a) { shake = Math.min(1, shake + a); }
+          export function dashReady() { return dashCd <= 0; }
+
+          // ---------- damage / pickups ----------
+          export function damagePlayer(amount, src) {
+            if (player.dead || invuln > 0) return false;
+            sinceHurt = 0; hurtFx = Math.min(1, hurtFx + 0.35 + amount / 60); shake = Math.min(1, shake + 0.4);
+            let a = amount;
+            if (player.shield > 0) { const s = Math.min(player.shield, a); player.shield -= s; a -= s; }
+            player.hp = Math.max(0, player.hp - a);
+            hooks.onHurt(amount, src || null);
+            if (player.hp <= 0) { player.dead = true; deadT = 0; hooks.onDeath(); }
+            return true;
+          }
+          export function heal(n) {
+            if (player.dead || player.hp >= player.maxHp) return false;
+            player.hp = Math.min(player.maxHp, player.hp + n); hooks.onPickup('hp'); return true;
+          }
+          export function addShield(n) {
+            if (player.dead || player.shield >= player.maxShield) return false;
+            player.shield = Math.min(player.maxShield, player.shield + n); hooks.onPickup('shield'); return true;
+          }
+          export function addAmmo() {
+            let used = false;
+            ammo.forEach((a, i) => {
+              const w = WEAPONS[i], cap = Math.round(w.reserve * 1.5);
+              if (a.res < cap) { a.res = Math.min(cap, a.res + w.pickup); used = true; }
+            });
+            if (used) hooks.onPickup('ammo');
+            return used;
+          }
+
+          // ---------- ray helpers ----------
+          function rayCircle(ox, oz, dx, dz, cx, cz, r) {
+            const fx = ox - cx, fz = oz - cz, a = dx * dx + dz * dz;
+            if (a < 1e-8) return null;
+            const b = 2 * (fx * dx + fz * dz), c = fx * fx + fz * fz - r * r, disc = b * b - 4 * a * c;
+            if (disc < 0) return null;
+            const sq = Math.sqrt(disc);
+            let s = (-b - sq) / (2 * a);
+            if (s < 0) s = (-b + sq) / (2 * a);
+            return s;
+          }
+
+          // nearest static hit: floor, arena wall or cover/pillar
+          function worldHit(o, d, maxT) {
+            let t = maxT, kind = 'none';
+            if (d.y < -1e-5) { const s = -o.y / d.y; if (s > 0 && s < t) { t = s; kind = 'floor'; _wn.set(0, 1, 0); } }
+            const lim = R - 0.75;
+            if (Math.abs(d.x) > 1e-5) {
+              const s = ((d.x > 0 ? lim : -lim) - o.x) / d.x;
+              if (s > 0 && s < t) { t = s; kind = 'wall'; _wn.set(d.x > 0 ? -1 : 1, 0, 0); }
+            }
+            if (Math.abs(d.z) > 1e-5) {
+              const s = ((d.z > 0 ? lim : -lim) - o.z) / d.z;
+              if (s > 0 && s < t) { t = s; kind = 'wall'; _wn.set(0, 0, d.z > 0 ? -1 : 1); }
+            }
+            for (const k of colliders) {
+              const s = rayCircle(o.x, o.z, d.x, d.z, k.x, k.z, k.r);
+              if (s === null || s <= 0 || s >= t) continue;
+              const y = o.y + d.y * s, h = k.r > 4 ? 6 : k.r > 2 ? 14 : k.r < 1.2 ? 1.6 : 2.4;
+              if (y > 0 && y < h) { t = s; kind = 'cover'; _wn.set(o.x + d.x * s - k.x, 0, o.z + d.z * s - k.z).normalize(); }
+            }
+            return {t, kind, normal: _wn};
+          }
+
+          // gentle aim assist for touch screens
+          function assistDir(o, d) {
+            let best = null, bs = 0.07;
+            for (const tg of targets) {
+              if (!tg.alive) continue;
+              _p.set(tg.pos.x, tg.pos.y + tg.h * 0.55, tg.pos.z).sub(o);
+              const dist = _p.length();
+              if (dist > 70 || dist < 1) continue;
+              _p.divideScalar(dist);
+              const ang = Math.acos(clamp(_p.dot(d), -1, 1));
+              if (ang < bs) { bs = ang; best = _n.copy(_p); }
+            }
+            if (best) d.lerp(best, settings.assist).normalize();
+          }
+
+          function markHit(head, killed) {
+            hmT = 0.18;
+            E.hitm.style.borderColor = killed ? '#ff2a5f' : head ? '#ffd24a' : '#fff';
+          }
+
+          // one hitscan pellet
+          function pellet(w, o, d) {
+            const wl = worldHit(o, d, w.range);
+            const found = [];
+            for (const tg of targets) {
+              if (!tg.alive) continue;
+              const s = rayCircle(o.x, o.z, d.x, d.z, tg.pos.x, tg.pos.z, tg.r);
+              if (s === null || s < 0 || s > wl.t) continue;
+              const y = o.y + d.y * s;
+              if (y < tg.pos.y - 0.05 || y > tg.pos.y + tg.h + 0.05) continue;
+              found.push({tg, s, head: y > tg.pos.y + tg.h * 0.78});
+            }
+            found.sort((a, b) => a.s - b.s);
+            const n = w.pierce ? found.length : Math.min(1, found.length);
+            let endT = wl.t, hit = false;
+            for (let i = 0; i < n; i++) {
+              const f = found[i];
+              _q.copy(d).multiplyScalar(f.s).add(o);
+              let dmg = w.dmg * (f.head ? 2 : 1);
+              if (w.falloff) dmg *= 1 - clamp((f.s - 8) / 30, 0, 0.65);
+              const killed = f.tg.hit(dmg, _q.clone(), d.clone(), f.head);
+              hooks.onHit(f.tg, _q.clone(), dmg, f.head, !!killed);
+              markHit(f.head, killed);
+              hit = true;
+              if (!w.pierce) endT = f.s;
+            }
+            _e.copy(d).multiplyScalar(endT).add(o);
+            if ((w.pierce || !hit) && wl.kind !== 'none') hooks.onImpact(_e.clone(), wl.kind, wl.normal.clone());
+            hooks.onTracer(w, _mz.clone(), _e.clone(), hit);
+          }
+
+          function shoot() {
+            const w = WEAPONS[cur], st = ammo[cur], wo = rig.list[cur];
+            st.mag--; cd = w.rate; sinceShot = 0; queued = 0;
+            camera.updateMatrixWorld(true);
+            camera.getWorldPosition(_o); camera.getWorldDirection(_d);
+            camera.matrixWorld.extractBasis(_r, _u, _b);
+            assistDir(_o, _d);
+            wo.muzzle.getWorldPosition(_mz);
+            hooks.onShot(w, _mz.clone(), cur);
+            const base = _d.clone();
+            for (let k = 0; k < w.pellets; k++) {
+              const a = Math.random() * 6.2832, rr = Math.sqrt(Math.random()) * w.spread;
+              const dir = base.clone().addScaledVector(_r, Math.cos(a) * rr).addScaledVector(_u, Math.sin(a) * rr).normalize();
+              pellet(w, _o, dir);
+            }
+            recoilP += w.recoil; recoilY += (Math.random() - 0.5) * w.recoil * 0.8;
+            shake = Math.min(1, shake + w.shake); kick = Math.min(1.2, kick + w.kick);
+            player.pitch = Math.min(1.45, player.pitch + w.recoil * 0.35);
+            wo.fire();
+          }
+
+          function startReload() {
+            const w = WEAPONS[cur], st = ammo[cur];
+            if (swapT >= 0 || reloadT >= 0 || st.mag >= w.mag || st.res <= 0) return;
+            reloadT = 0; hooks.onReload(w);
+          }
+
+          // ---------- HUD ----------
+          function hud() {
+            const w = WEAPONS[cur], st = ammo[cur];
+            const hp = Math.ceil(player.hp), sh = Math.ceil(player.shield), rl = reloadT >= 0;
+            const key = hp + '|' + sh + '|' + cur + '|' + st.mag + '|' + st.res + '|' + rl;
+            if (key !== hudKey) {
+              hudKey = key;
+              E.hpb.style.width = (hp / player.maxHp * 100) + '%';
+              E.shb.style.width = (sh / player.maxShield * 100) + '%';
+              E.ammo.innerHTML = rl ? 'RELOAD' : st.mag + '<span style="font-size:15px;color:#0ffa"> / ' + st.res + '</span>';
+              E.wpn.textContent = w.name;
+              E.wpn.style.color = '#' + w.color.toString(16).padStart(6, '0');
+            }
+            E.hit.style.opacity = Math.min(1, hurtFx * 1.2);
+            E.hitm.style.opacity = hmT / 0.18;
+            E.dash.style.opacity = dashCd > 0 ? 0.35 : 1;
+          }
+
+          // ---------- main update ----------
+          export function updatePlayer(t, dt) {
+            if (!rig) return;
+            dt = Math.min(dt, 0.05);
+            sinceShot += dt; sinceHurt += dt; queued -= dt;
+            hurtFx = Math.max(0, hurtFx - dt * 1.6); hmT = Math.max(0, hmT - dt);
+            invuln = Math.max(0, invuln - dt); dashCd = Math.max(0, dashCd - dt); cd = Math.max(0, cd - dt);
+
+            // death camera
+            if (player.dead) {
+              deadT += dt;
+              const k = 1 - Math.exp(-4 * dt);
+              camera.position.y += (0.35 - camera.position.y) * k;
+              camera.rotation.z += (0.9 - camera.rotation.z) * k;
+              camera.rotation.x += (-0.3 - camera.rotation.x) * k;
+              fxU.hurt.value = 0.6;
+              rig.list[cur].update(t, dt, {ammo: 0, since: 9, reload: -1, sprint: 0});
+              hud(); lookDX = lookDY = 0;
+              return;
+            }
+
+            // look + weapon sway
+            player.yaw -= lookDX * settings.sens;
+            player.pitch = clamp(player.pitch - lookDY * settings.sens, -1.45, 1.45);
+            swayX = clamp(swayX - lookDX * 0.0006, -0.05, 0.05);
+            swayY = clamp(swayY + lookDY * 0.0005, -0.04, 0.04);
+            lookDX = lookDY = 0;
+            swayX *= Math.exp(-7 * dt); swayY *= Math.exp(-7 * dt);
+
+            // movement
+            const sn = Math.sin(player.yaw), cs = Math.cos(player.yaw);
+            let mx = input.moveX, my = input.moveY;
+            const len = Math.hypot(mx, my);
+            if (len > 1) { mx /= len; my /= len; }
+            const mag = Math.min(1, len);
+            const wishX = -sn * my + cs * mx, wishZ = -cs * my - sn * mx;
+            player.sprint = mag > 0.93 && my > 0.6 && !input.fire && player.onGround;
+            const top = player.sprint ? 9.4 : 6.4;
+            const v = player.vel;
+
+            if (input.dash) {
+              input.dash = false;
+              if (dashCd <= 0) {
+                dashT = 0.2; dashCd = 1.5; invuln = Math.max(invuln, 0.25); dashGlow = 1;
+                let dx = wishX, dz = wishZ;
+                if (len < 0.1) { dx = -sn; dz = -cs; }
+                const l = Math.hypot(dx, dz) || 1;
+                dashDX = dx / l; dashDZ = dz / l;
+                hooks.onDash();
+              }
+            }
+            if (dashT > 0) {
+              dashT -= dt; v.x = dashDX * 26; v.z = dashDZ * 26;
+            } else {
+              const k = 1 - Math.exp(-(player.onGround ? 13 : 3.2) * dt);
+              v.x += (wishX * top * mag - v.x) * k;
+              v.z += (wishZ * top * mag - v.z) * k;
+            }
+            if (input.jump) {
+              input.jump = false;
+              if (player.onGround) { v.y = 8.4; player.onGround = false; hooks.onJump(); }
+            }
+            if (!player.onGround) v.y -= 24 * dt;
+            player.pos.x += v.x * dt; player.pos.z += v.z * dt;
+            pushOut(player.pos, 0.55);
+            if (!player.onGround) {
+              player.pos.y += v.y * dt;
+              if (player.pos.y <= 0) {
+                if (v.y < -5) { landDip = clamp(-v.y * 0.007, 0, 0.14); hooks.onLand(-v.y); }
+                player.pos.y = 0; v.y = 0; player.onGround = true;
+              }
+            }
+            player.speed = Math.hypot(v.x, v.z);
+
+            // head bob + footsteps
+            const moving = player.onGround && player.speed > 1;
+            const bk = moving ? Math.min(1, player.speed / 8) : 0;
+            if (moving) bobPh += dt * player.speed * (player.sprint ? 1.25 : 1.4);
+            const kb = 1 - Math.exp(-14 * dt);
+            bobY += (Math.sin(bobPh * 2) * 0.035 * bk - bobY) * kb;
+            bobX += (Math.cos(bobPh) * 0.025 * bk - bobX) * kb;
+            const sc = Math.floor(bobPh / Math.PI);
+            if (sc !== lastStep) { lastStep = sc; if (moving) hooks.onStep(player.sprint); }
+            landDip *= Math.exp(-9 * dt);
+            tilt += ((-mx * 0.025 + (dashT > 0 ? -0.05 : 0)) - tilt) * (1 - Math.exp(-8 * dt));
+
+            // camera
+            const sh = shake * shake, rn = () => Math.random() - 0.5;
+            player.head.set(player.pos.x, player.pos.y + 1.7 - landDip, player.pos.z);
+            camera.position.set(
+              player.pos.x + bobX * 0.4 + rn() * sh * 0.08,
+              player.pos.y + 1.7 + bobY * 0.6 - landDip + rn() * sh * 0.08,
+              player.pos.z);
+            camera.rotation.set(player.pitch + recoilP + rn() * sh * 0.03, player.yaw + recoilY + rn() * sh * 0.03, tilt + rn() * sh * 0.02);
+            shake = Math.max(0, shake - dt * 3.2);
+            recoilP *= Math.exp(-10 * dt); recoilY *= Math.exp(-10 * dt);
+
+            // fov + bloom kick
+            const ft = 75 + (player.sprint ? 5 : 0) + dashGlow * 16;
+            fov += (ft - fov) * (1 - Math.exp(-10 * dt));
+            if (Math.abs(camera.fov - fov) > 0.02) { camera.fov = fov; camera.updateProjectionMatrix(); }
+            dashGlow = Math.max(0, dashGlow - dt * 4);
+            bloom.strength = 1.1 + dashGlow;
+            fxU.hurt.value = hurtFx;
+
+            // weapon swap
+            if (input.swap) {
+              input.swap = false;
+              if (swapT < 0) { swapT = 0; swapTo = (cur + 1) % WEAPONS.length; reloadT = -1; hooks.onSwap(WEAPONS[swapTo]); }
+            }
+            if (swapT >= 0) {
+              swapT += dt;
+              if (swapT >= 0.22 && cur !== swapTo) {
+                rig.list[cur].group.visible = false; cur = swapTo; player.weapon = cur; rig.list[cur].group.visible = true;
+              }
+              if (swapT >= 0.44) swapT = -1;
+            }
+            const w = WEAPONS[cur], st = ammo[cur], wo = rig.list[cur];
+
+            // reload
+            if (input.reload) { input.reload = false; startReload(); }
+            if (reloadT >= 0) {
+              reloadT += dt;
+              if (reloadT >= w.reload) {
+                const take = Math.min(w.mag - st.mag, st.res);
+                st.mag += take; st.res -= take; reloadT = -1; hooks.onReloadDone(w);
+              }
+            }
+
+            // fire
+            if (input.fire && !fireHeld) queued = 0.25;
+            const trigger = w.auto ? input.fire : queued > 0;
+            if (trigger && cd <= 0 && swapT < 0 && reloadT < 0) {
+              if (st.mag > 0) shoot();
+              else if (st.res > 0) startReload();
+              else if (!fireHeld) { hooks.onEmpty(); queued = 0; }
+            }
+            fireHeld = input.fire;
+
+            // shield regen
+            if (sinceHurt > 4 && player.shield < player.maxShield) player.shield = Math.min(player.maxShield, player.shield + 16 * dt);
+
+            // view-model pose
+            const rl = reloadT >= 0 ? reloadT / w.reload : -1;
+            sprintB += ((player.sprint ? 1 : 0) - sprintB) * (1 - Math.exp(-9 * dt));
+            kick *= Math.exp(-14 * dt);
+            let px = BASE.x - sprintB * 0.07 + swayX + bobX * 0.8, py = BASE.y - sprintB * 0.05 + swayY + bobY * 0.8, pz = BASE.z + kick * 0.12;
+            let rx = kick * 0.22, ry = sprintB * 0.55, rz = -sprintB * 0.25 + swayX * 2;
+            if (rl >= 0) { const e = Math.sin(rl * Math.PI); py -= e * 0.16; rx -= e * 0.5; rz += e * 0.55; px -= e * 0.04; }
+            if (swapT >= 0) { const e = Math.sin(swapT / 0.44 * Math.PI); py -= e * 0.4; rx -= e * 0.6; }
+            rig.root.position.set(px, py, pz);
+            rig.root.rotation.set(rx, ry, rz);
+            wo.update(t, dt, {ammo: st.mag / w.mag, since: sinceShot, reload: rl, sprint: sprintB});
+            hud();
+          }
+          EOF_PLAYER
+      - name: Write enemies.js
+        run: |
+          cat > game/www/js/enemies.js <<'EOF_ENEMIES'
+          import {THREE, V3, R, scene, M, neon, bevelBox, mesh, glowSprite, rnd, clamp} from './core.js';
+          import {pushOut, colliders} from './world.js';
+          import {player, targets, damagePlayer, heal, addShield, addAmmo} from './player.js';
+          
+          // ---------- public API ----------
+          export const enemies = [];
+          export const eHooks = {};
+          ['onSpawn', 'onEnemyHit', 'onKill', 'onEnemyShot', 'onBoltHit', 'onWave', 'onWaveClear', 'onDrop']
+            .forEach(n => eHooks[n] = () => {});
+          // state: idle | intermission | active
+          export const waves = {n: 0, state: 'idle', timer: 0, queue: [], spawnT: 0, kills: 0};
+          export const aliveCount = () => enemies.reduce((a, e) => a + (e.alive || e.spawning ? 1 : 0), 0);
+          export const remaining = () => waves.queue.length + aliveCount();
+          
+          // ---------- enemy types ----------
+          const TYPES = {
+            grunt:  {hp: 60,  speed: 4.2, r: 0.6,  h: 1.95, score: 100, dmg: 10, rate: 1.5, want: 14, color: 0xff00ff, body: 0x5a1050, muz: [0.38, 1.25, 0.65], scale: 1,    bolts: 1, bspeed: 24},
+            runner: {hp: 35,  speed: 8.6, r: 0.5,  h: 1.5,  score: 80,  dmg: 14, rate: 0.9, melee: true,   color: 0xff2a5f, body: 0x6a1030, scale: 1},
+            drone:  {hp: 40,  speed: 5.6, r: 0.55, h: 1.0,  score: 120, dmg: 8,  rate: 1.1, want: 12, color: 0x00ffff, body: 0x143a5a, fly: true, muz: [0, 0.5, 0.45], scale: 1, bolts: 1, bspeed: 30},
+            brute:  {hp: 420, speed: 2.5, r: 1.1,  h: 3.4,  score: 500, dmg: 16, rate: 2.3, want: 16, color: 0xff8800, body: 0x6a3a10, muz: [0.38, 1.25, 0.65], scale: 1.75, bolts: 3, bspeed: 20}
+          };
+          const UP = new V3(0, 1, 0);
+          
+          // ---------- cached geometry ----------
+          const gc = {};
+          const BB = (w, h, d, r = 0.04) => gc['b' + [w, h, d, r]] || (gc['b' + [w, h, d, r]] = bevelBox(w, h, d, r));
+          const BX = (w, h, d) => gc['x' + [w, h, d]] || (gc['x' + [w, h, d]] = new THREE.BoxGeometry(w, h, d));
+          const SPH = r => gc['s' + r] || (gc['s' + r] = new THREE.SphereGeometry(r, 16, 12));
+          const TOR = (r, t) => gc['t' + [r, t]] || (gc['t' + [r, t]] = new THREE.TorusGeometry(r, t, 8, 32));
+          const CON = new THREE.ConeGeometry(0.06, 0.4, 8);
+          const PADG = new THREE.RingGeometry(0.5, 0.62, 40);
+          const P = (g, m, x, y, z, par, sh = false) => mesh(g, m, x, y, z, par, sh);
+          
+          // ---------- models ----------
+          function makeMats(T) {
+            const body = M.armor.clone();
+            body.color.setHex(T.body); body.emissive.setHex(0xffffff); body.emissiveIntensity = 0;
+            return {body, glow: neon(T.color, 3)};
+          }
+          
+          function buildHumanoid(e, m) {
+            const g = new THREE.Group(), legs = [];
+            [-1, 1].forEach(s => {
+              const l = new THREE.Group(); l.position.set(s * 0.18, 0.95, 0); g.add(l);
+              P(BB(0.2, 0.85, 0.22, 0.05), m.body, 0, -0.45, 0, l, true);
+              P(BB(0.24, 0.12, 0.34, 0.04), M.dark, 0, -0.88, 0.05, l);
+              P(BX(0.04, 0.5, 0.02), m.glow, s * 0.1, -0.42, 0.12, l);
+              legs.push(l);
+            });
+            P(BB(0.62, 0.7, 0.4, 0.07), m.body, 0, 1.3, 0, g, true);
+            P(BB(0.36, 0.3, 0.1, 0.03), M.dark, 0, 1.3, -0.24, g);
+            P(BX(0.3, 0.05, 0.02), m.glow, 0, 1.38, 0.21, g);
+            P(BB(0.3, 0.28, 0.32, 0.06), M.dark, 0, 1.78, 0, g, true);
+            P(BX(0.24, 0.06, 0.02), m.glow, 0, 1.79, 0.17, g);
+            [-1, 1].forEach(s => P(BB(0.22, 0.2, 0.28, 0.05), m.body, s * 0.42, 1.55, 0, g));
+            P(BB(0.13, 0.5, 0.14, 0.04), M.dark, -0.4, 1.22, 0.05, g);
+            P(BB(0.14, 0.14, 0.6, 0.04), M.dark, 0.38, 1.25, 0.32, g);
+            P(BX(0.03, 0.03, 0.5), m.glow, 0.38, 1.33, 0.32, g);
+            P(SPH(0.05), m.glow, 0.38, 1.25, 0.64, g);
+            if (e.T.scale > 1) {
+              [-1, 1].forEach(s => { const h = P(CON, m.glow, s * 0.2, 2.05, 0, g); h.rotation.z = -s * 0.35; });
+              P(BX(0.5, 0.06, 0.02), m.glow, 0, 1.2, 0.21, g);
+            }
+            e.legs = legs;
+            return g;
+          }
+          
+          function buildRunner(e, m) {
+            const g = new THREE.Group(), legs = [];
+            [-1, 1].forEach(s => {
+              const l = new THREE.Group(); l.position.set(s * 0.16, 0.8, 0); g.add(l);
+              P(BB(0.16, 0.8, 0.18, 0.04), m.body, 0, -0.4, 0.05, l, true);
+              P(BB(0.18, 0.1, 0.3, 0.03), M.dark, 0, -0.8, 0.08, l);
+              legs.push(l);
+            });
+            const t = new THREE.Group(); t.position.set(0, 1.0, 0); t.rotation.x = 0.5; g.add(t);
+            P(BB(0.5, 0.55, 0.7, 0.07), m.body, 0, 0, 0, t, true);
+            P(BX(0.3, 0.04, 0.5), m.glow, 0, 0.29, 0, t);
+            P(BB(0.28, 0.24, 0.3, 0.05), M.dark, 0, 0.35, 0.35, t, true);
+            P(BX(0.2, 0.05, 0.02), m.glow, 0, 0.37, 0.51, t);
+            [-1, 1].forEach(s => {
+              P(BX(0.05, 0.06, 0.9), m.glow, s * 0.34, -0.1, 0.55, t);
+              P(BB(0.1, 0.12, 0.3, 0.03), M.dark, s * 0.3, -0.05, 0.1, t);
+            });
+            e.legs = legs;
+            return g;
+          }
+          
+          function buildDrone(e, m) {
+            const g = new THREE.Group();
+            P(SPH(0.36), m.body, 0, 0.5, 0, g, true);
+            P(SPH(0.14), m.glow, 0, 0.52, 0.28, g);
+            const ring = P(TOR(0.5, 0.04), m.glow, 0, 0.5, 0, g); ring.rotation.x = Math.PI / 2;
+            e.spin = ring;
+            for (let i = 0; i < 4; i++) {
+              const a = i * Math.PI / 2 + Math.PI / 4;
+              P(BB(0.1, 0.18, 0.1, 0.03), M.dark, Math.cos(a) * 0.5, 0.5, Math.sin(a) * 0.5, g);
+            }
+            const sp = glowSprite(e.T.color, 1.6); sp.position.set(0, 0.5, 0); g.add(sp);
+            e.own.push(sp.material);
+            return g;
+          }
+          
+          // ---------- spawning ----------
+          function spawnEnemy(type, x, z) {
+            const T = TYPES[type], m = makeMats(T);
+            const e = {
+              type, T, alive: false, spawning: true, dying: false, remove: false, spawnT: 0, dieT: 0, vy: 0,
+              hp: T.hp * (1 + Math.min(waves.n, 20) * 0.05), pos: new V3(x, 0, z), r: T.r, h: T.h, kv: new V3(),
+              cd: rnd(0.8, 2), strafe: Math.random() < 0.5 ? 1 : -1, strafeT: rnd(1, 3), ph: rnd(0, 6.28),
+              yaw: 0, walk: 0, mv: 0, flash: 0, tele: 0, m, own: [m.body, m.glow], legs: null, spin: null, score: T.score
+            };
+            e.maxHp = e.hp;
+            e.root = new THREE.Group(); scene.add(e.root);
+            e.model = type === 'runner' ? buildRunner(e, m) : type === 'drone' ? buildDrone(e, m) : buildHumanoid(e, m);
+            e.model.scale.setScalar(0.01); e.root.add(e.model);
+            e.pad = new THREE.Mesh(PADG, new THREE.MeshBasicMaterial({color: T.color, transparent: true, opacity: 1, toneMapped: false, depthWrite: false, side: THREE.DoubleSide}));
+            e.pad.rotation.x = -Math.PI / 2; e.pad.position.set(x, 0.06, z); scene.add(e.pad);
+            e.hit = (dmg, point, dir, head) => hitEnemy(e, dmg, point, dir, head);
+            e.root.position.copy(e.pos);
+            enemies.push(e); targets.push(e);
+            eHooks.onSpawn(e);
+            return e;
+          }
+          
+          function killPad(e) {
+            if (!e.pad) return;
+            scene.remove(e.pad); e.pad.material.dispose(); e.pad = null;
+          }
+          
+          function removeEnemy(e) {
+            killPad(e);
+            scene.remove(e.root);
+            e.own.forEach(m => m.dispose());
+            let i = enemies.indexOf(e); if (i >= 0) enemies.splice(i, 1);
+            i = targets.indexOf(e); if (i >= 0) targets.splice(i, 1);
+          }
+          
+          // ---------- damage ----------
+          function hitEnemy(e, dmg, point, dir, head) {
+            if (!e.alive) return false;
+            e.hp -= dmg; e.flash = 1;
+            const kb = (e.T.scale > 1 ? 0.6 : 2.2) * Math.min(1, dmg / 40) * 3;
+            e.kv.x += dir.x * kb; e.kv.z += dir.z * kb;
+            eHooks.onEnemyHit(e, point, head, dmg);
+            if (e.hp <= 0) { killEnemy(e, dir); return true; }
+            return false;
+          }
+          
+          function killEnemy(e, dir) {
+            e.alive = false; e.dying = true; e.dieT = 0; e.vy = 2;
+            e.kv.x += dir.x * 4; e.kv.z += dir.z * 4;
+            waves.kills++;
+            eHooks.onKill(e);
+            const n = e.type === 'brute' ? 2 : Math.random() < 0.3 ? 1 : 0;
+            for (let i = 0; i < n; i++) dropPickup(e.pos.x + rnd(-1, 1), e.pos.z + rnd(-1, 1), pickKind());
+          }
+          
+          // ---------- enemy bolts ----------
+          const bolts = [];
+          const boltGeo = new THREE.SphereGeometry(0.16, 10, 8);
+          const boltMats = {};
+          const _bd = new V3();
+          
+          function spawnBolt(pos, vel, dmg, color) {
+            const mat = boltMats[color] || (boltMats[color] = neon(color, 6));
+            const m = new THREE.Mesh(boltGeo, mat);
+            m.position.copy(pos); m.scale.set(1, 1, 2.4);
+            m.lookAt(_bd.copy(pos).add(vel));
+            scene.add(m);
+            bolts.push({m, vel, dmg, life: 4, color});
+          }
+          
+          function removeBolt(i, hitFx) {
+            const b = bolts[i];
+            if (hitFx) eHooks.onBoltHit(b.m.position.clone(), b.color);
+            scene.remove(b.m); bolts.splice(i, 1);
+          }
+          
+          function updateBolts(dt) {
+            const p = player.pos;
+            for (let i = bolts.length - 1; i >= 0; i--) {
+              const b = bolts[i], pos = b.m.position;
+              pos.addScaledVector(b.vel, dt); b.life -= dt;
+              if (b.life <= 0) { removeBolt(i, false); continue; }
+              if (!player.dead && pos.y > p.y - 0.1 && pos.y < p.y + 1.95 && Math.hypot(pos.x - p.x, pos.z - p.z) < 0.6) {
+                if (damagePlayer(b.dmg, pos.clone())) { removeBolt(i, true); continue; }
+              }
+              let dead = pos.y < 0.05 || Math.abs(pos.x) > R - 1 || Math.abs(pos.z) > R - 1;
+              if (!dead) {
+                for (const k of colliders) {
+                  const h = k.r > 4 ? 6 : k.r > 2 ? 14 : k.r < 1.2 ? 1.6 : 2.4;
+                  if (pos.y < h && Math.hypot(pos.x - k.x, pos.z - k.z) < k.r) { dead = true; break; }
+                }
+              }
+              if (dead) removeBolt(i, true);
+            }
+          }
+          
+          function enemyShoot(e) {
+            const T = e.T, p = player.pos, c = Math.cos(e.yaw), s = Math.sin(e.yaw), sc = T.scale;
+            const ox = T.muz[0] * sc, oy = e.pos.y + T.muz[1] * sc, oz = T.muz[2] * sc;
+            const from = new V3(e.pos.x + ox * c + oz * s, oy, e.pos.z - ox * s + oz * c);
+            const target = new V3(p.x + player.vel.x * 0.25, p.y + 1.15, p.z + player.vel.z * 0.25);
+            const base = target.sub(from).normalize();
+            const dmg = T.dmg * (1 + Math.min(waves.n, 20) * 0.03);
+            for (let i = 0; i < T.bolts; i++) {
+              const d = base.clone();
+              d.applyAxisAngle(UP, (i - (T.bolts - 1) / 2) * 0.14 + rnd(-0.03, 0.03));
+              d.y += rnd(-0.03, 0.03); d.normalize();
+              spawnBolt(from, d.multiplyScalar(T.bspeed), dmg, T.color);
+            }
+            eHooks.onEnemyShot(e, from, T.color);
+          }
+          
+          // ---------- pickups ----------
+          const pickups = [];
+          const PCOL = {hp: 0xff2a5f, shield: 0x00ffff, ammo: 0xffd24a};
+          const pkGeo = new THREE.OctahedronGeometry(0.32);
+          
+          function pickKind() {
+            if (player.hp < 50 && Math.random() < 0.5) return 'hp';
+            const r = Math.random();
+            return r < 0.35 ? 'hp' : r < 0.65 ? 'shield' : 'ammo';
+          }
+          
+          function dropPickup(x, z, kind) {
+            const color = PCOL[kind], mat = neon(color, 3.5);
+            const g = new THREE.Group(); g.position.set(x, 0.9, z);
+            P(pkGeo, mat, 0, 0, 0, g);
+            const ring = P(TOR(0.42, 0.03), mat, 0, 0, 0, g); ring.rotation.x = Math.PI / 2;
+            const sp = glowSprite(color, 2.2); g.add(sp);
+            scene.add(g);
+            pickups.push({g, kind, life: 22, ph: rnd(0, 6), mat, sp});
+            eHooks.onDrop(kind, g.position);
+          }
+          
+          function needs(kind) {
+            return kind === 'hp' ? player.hp < player.maxHp : kind === 'shield' ? player.shield < player.maxShield : true;
+          }
+          
+          function updatePickups(t, dt) {
+            const p = player.pos;
+            for (let i = pickups.length - 1; i >= 0; i--) {
+              const k = pickups[i], g = k.g;
+              k.life -= dt;
+              g.rotation.y += dt * 2.2;
+              g.visible = k.life > 4 || Math.sin(t * 22) > 0;
+              let done = k.life <= 0;
+              if (!done && !player.dead) {
+                const dx = p.x - g.position.x, dz = p.z - g.position.z, d = Math.hypot(dx, dz);
+                if (needs(k.kind) && d < 4.5 && d > 0.01) {
+                  g.position.x += dx / d * 10 * dt; g.position.z += dz / d * 10 * dt;
+                  g.position.y += (1.0 - g.position.y) * Math.min(1, dt * 6);
+                } else {
+                  g.position.y = 0.9 + Math.sin(t * 3 + k.ph) * 0.12;
+                }
+                if (d < 1.3 && Math.abs(p.y + 0.9 - g.position.y) < 2) {
+                  done = k.kind === 'hp' ? heal(35) : k.kind === 'shield' ? addShield(45) : addAmmo();
+                }
+              }
+              if (done) {
+                scene.remove(g); k.mat.dispose(); k.sp.material.dispose(); pickups.splice(i, 1);
+              }
+            }
+          }
+          
+          // ---------- enemy AI ----------
+          function place(e) {
+            e.root.position.set(e.pos.x, e.pos.y, e.pos.z);
+            e.root.rotation.y = e.yaw;
+          }
+          
+          function updateEnemy(e, t, dt) {
+            const T = e.T, p = player.pos, dead = player.dead;
+            e.flash = Math.max(0, e.flash - dt * 7);
+            e.m.body.emissiveIntensity = e.flash * 0.9;
+          
+            // spawn-in
+            if (e.spawning) {
+              e.spawnT += dt / 0.9;
+              const k = Math.min(1, e.spawnT), ease = 1 - Math.pow(1 - k, 3);
+              e.model.scale.setScalar(Math.max(0.01, ease) * T.scale);
+              if (e.pad) { e.pad.scale.setScalar(0.6 + k * 2.4); e.pad.material.opacity = 1 - k; }
+              if (k >= 1) { e.spawning = false; e.alive = true; killPad(e); }
+              place(e); return;
+            }
+          
+            // death animation
+            if (e.dying) {
+              e.dieT += dt;
+              const k = e.dieT;
+              e.kv.multiplyScalar(Math.exp(-4 * dt));
+              e.pos.x += e.kv.x * dt; e.pos.z += e.kv.z * dt;
+              if (T.fly) {
+                e.vy -= 20 * dt; e.pos.y = Math.max(0, e.pos.y + e.vy * dt);
+                e.model.rotation.z += dt * 9; e.model.rotation.x += dt * 4;
+              } else {
+                e.model.rotation.x = -Math.min(k * 3.5, 1.45);
+              }
+              e.m.glow.emissiveIntensity = Math.max(0, 3 - k * 5);
+              if (k > 0.9) e.model.scale.setScalar(Math.max(0.01, (1.4 - k) / 0.5) * T.scale);
+              if (k >= 1.4) e.remove = true;
+              place(e); return;
+            }
+          
+            let dx = p.x - e.pos.x, dz = p.z - e.pos.z;
+            const dist = Math.hypot(dx, dz) || 1; dx /= dist; dz /= dist;
+          
+            // steering
+            let mx = 0, mz = 0;
+            if (!dead) {
+              e.strafeT -= dt;
+              if (e.strafeT <= 0) { e.strafe *= -1; e.strafeT = rnd(1.2, 3.5); }
+              if (T.melee) {
+                mx = dx - dz * e.strafe * 0.25; mz = dz + dx * e.strafe * 0.25;
+              } else {
+                const k = dist > T.want + 3 ? 1 : dist < T.want - 4 ? -0.9 : 0.15;
+                mx = dx * k - dz * e.strafe * 0.75; mz = dz * k + dx * e.strafe * 0.75;
+              }
+              for (const o of enemies) {
+                if (o === e || !o.alive) continue;
+                const ax = e.pos.x - o.pos.x, az = e.pos.z - o.pos.z, d2 = ax * ax + az * az, mm = e.r + o.r + 0.6;
+                if (d2 < mm * mm && d2 > 1e-4) { const d = Math.sqrt(d2); mx += ax / d * 1.4; mz += az / d * 1.4; }
+              }
+            }
+            const ml = Math.hypot(mx, mz);
+            if (ml > 0.01) { mx /= ml; mz /= ml; }
+            const sp = dead ? 0 : T.speed * (e.flash > 0.5 ? 0.6 : 1);
+            e.pos.x += (mx * sp + e.kv.x) * dt; e.pos.z += (mz * sp + e.kv.z) * dt;
+            e.kv.multiplyScalar(Math.exp(-6 * dt));
+            e.mv += ((ml > 0.01 && !dead ? 1 : 0) - e.mv) * (1 - Math.exp(-8 * dt));
+          
+            if (T.fly) {
+              e.pos.x = clamp(e.pos.x, -R + 2, R - 2); e.pos.z = clamp(e.pos.z, -R + 2, R - 2);
+              e.pos.y = 1.1 + Math.sin(t * 1.7 + e.ph) * 0.35;
+            } else {
+              pushOut(e.pos, e.r);
+            }
+            const keep = e.r + 0.7;
+            if (!dead && dist < keep) { e.pos.x = p.x - dx * keep; e.pos.z = p.z - dz * keep; }
+          
+            // facing
+            let dy = Math.atan2(dx, dz) - e.yaw;
+            dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+            e.yaw += dy * (1 - Math.exp(-8 * dt));
+          
+            // animation
+            if (e.legs) {
+              e.walk += dt * T.speed * 1.6 * e.mv;
+              const sw = Math.sin(e.walk) * 0.8 * e.mv;
+              e.legs[0].rotation.x = sw; e.legs[1].rotation.x = -sw;
+            }
+            if (e.spin) e.spin.rotation.z += dt * 5;
+          
+            // attacks
+            if (!dead) {
+              e.cd -= dt;
+              const mul = 1 + Math.min(waves.n, 20) * 0.03;
+              if (T.melee) {
+                e.tele = dist < 3 ? 1 : 0;
+                if (dist < e.r + 1.5 && e.cd <= 0 && Math.abs(p.y - e.pos.y) < 1.6) {
+                  damagePlayer(T.dmg * mul, e.pos.clone()); e.cd = T.rate;
+                }
+              } else {
+                e.tele = e.cd < 0.4 ? 1 - e.cd / 0.4 : 0;
+                if (e.cd <= 0) { if (dist < 60) enemyShoot(e); e.cd = T.rate * rnd(0.8, 1.4); }
+              }
+            } else e.tele = 0;
+            e.m.glow.emissiveIntensity = 3 + e.tele * 6;
+            place(e);
+          }
+          
+          // ---------- waves ----------
+          function buildQueue(n) {
+            const cnt = Math.min(5 + n * 2, 36), q = [];
+            for (let i = 0; i < cnt; i++) {
+              const r = Math.random();
+              q.push(n >= 3 && r < 0.22 ? 'drone' : n >= 2 && r < 0.55 ? 'runner' : 'grunt');
+            }
+            if (n % 5 === 0) for (let i = 0; i < Math.min(3, n / 5); i++) q.push('brute');
+            return q;
+          }
+          
+          function spawnPoint() {
+            for (let i = 0; i < 24; i++) {
+              const a = rnd(0, 6.283), d = rnd(24, 40), x = Math.cos(a) * d, z = Math.sin(a) * d;
+              if (Math.hypot(x - player.pos.x, z - player.pos.z) < 20) continue;
+              if (colliders.some(k => Math.hypot(x - k.x, z - k.z) < k.r + 1.5)) continue;
+              return [x, z];
+            }
+            return [-Math.sign(player.pos.x || 1) * 36, rnd(-20, 20)];
+          }
+          
+          function updateWaves(dt) {
+            if (player.dead || waves.state === 'idle') return;
+            if (waves.state === 'intermission') {
+              waves.timer -= dt;
+              if (waves.timer <= 0) {
+                waves.n++; waves.queue = buildQueue(waves.n); waves.spawnT = 0.5; waves.state = 'active';
+                eHooks.onWave(waves.n);
+              }
+              return;
+            }
+            waves.spawnT -= dt;
+            const cap = Math.min(6 + waves.n, 14);
+            if (waves.queue.length && waves.spawnT <= 0 && aliveCount() < cap) {
+              const [x, z] = spawnPoint();
+              spawnEnemy(waves.queue.shift(), x, z);
+              waves.spawnT = Math.max(0.35, 1.1 - waves.n * 0.04);
+            }
+            if (!waves.queue.length && aliveCount() === 0) {
+              waves.state = 'intermission'; waves.timer = 5;
+              addAmmo(); heal(25);
+              eHooks.onWaveClear(waves.n);
+            }
+          }
+          
+          // ---------- lifecycle ----------
+          export function resetEnemies() {
+            while (enemies.length) removeEnemy(enemies[enemies.length - 1]);
+            while (bolts.length) removeBolt(bolts.length - 1, false);
+            for (const k of pickups) { scene.remove(k.g); k.mat.dispose(); k.sp.material.dispose(); }
+            pickups.length = 0;
+            waves.n = 0; waves.kills = 0; waves.queue = []; waves.state = 'idle'; waves.timer = 0; waves.spawnT = 0;
+          }
+          
+          export function initEnemies() { resetEnemies(); }
+          
+          export function startWaves() {
+            resetEnemies();
+            waves.state = 'intermission'; waves.timer = 2.5;
+          }
+          
+          export function updateEnemies(t, dt) {
+            dt = Math.min(dt, 0.05);
+            for (let i = enemies.length - 1; i >= 0; i--) {
+              const e = enemies[i];
+              updateEnemy(e, t, dt);
+              if (e.remove) removeEnemy(e);
+            }
+            updateBolts(dt);
+            updatePickups(t, dt);
+            updateWaves(dt);
+          }
+          EOF_ENEMIES
+      - name: Write effects.js
+        run: |
+          cat > game/www/js/effects.js <<'EOF_FX'
+          import {THREE, V3, R, scene, camera, rnd, clamp, $} from './core.js';
+          import {hooks, player, addShake} from './player.js';
+          import {WEAPONS} from './weapons.js';
+          import {eHooks} from './enemies.js';
+
+          // hooks can have several listeners (effects + audio + ui) -> chain them
+          const chain = (o, n, f) => { const p = o[n]; o[n] = (...a) => { p(...a); f(...a); }; };
+          const _c = new THREE.Color(), _v = new V3(), _tg = new V3(), _dir = new V3();
+          const WHITE = new THREE.Color(1, 1, 1);
+          const PCOL = {hp: 0xff2a5f, shield: 0x00ffff, ammo: 0xffd24a};
+          const hexStr = h => '#' + h.toString(16).padStart(6, '0');
+
+          // ---------- particle pool (single draw call, additive glow) ----------
+          const MAXP = 2200;
+          const pPos = new Float32Array(MAXP * 3), pCol = new Float32Array(MAXP * 3), pVel = new Float32Array(MAXP * 3);
+          const pSize = new Float32Array(MAXP), pAlpha = new Float32Array(MAXP), pLife = new Float32Array(MAXP), pMax = new Float32Array(MAXP);
+          const pS0 = new Float32Array(MAXP), pGrav = new Float32Array(MAXP), pDrag = new Float32Array(MAXP);
+          let pHead = 0, pGeo, pMat, pPts;
+
+          function initParticles() {
+            pGeo = new THREE.BufferGeometry();
+            const dyn = (arr, n) => { const a = new THREE.BufferAttribute(arr, n); a.setUsage(THREE.DynamicDrawUsage); return a; };
+            pGeo.setAttribute('position', dyn(pPos, 3));
+            pGeo.setAttribute('col', dyn(pCol, 3));
+            pGeo.setAttribute('size', dyn(pSize, 1));
+            pGeo.setAttribute('alpha', dyn(pAlpha, 1));
+            pMat = new THREE.ShaderMaterial({
+              uniforms: {scale: {value: 600}},
+              vertexShader: 'attribute float size;attribute float alpha;attribute vec3 col;uniform float scale;varying float vA;varying vec3 vC;' +
+                'void main(){vA=alpha;vC=col;vec4 mv=modelViewMatrix*vec4(position,1.);' +
+                'gl_PointSize=min(64.,size*scale/max(.1,-mv.z));gl_Position=projectionMatrix*mv;}',
+              fragmentShader: 'varying float vA;varying vec3 vC;' +
+                'void main(){float d=length(gl_PointCoord-.5)*2.;float a=smoothstep(1.,0.,d);a*=a;' +
+                'gl_FragColor=vec4(vC*a*vA*2.2,a*vA);}',
+              transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+            });
+            pPts = new THREE.Points(pGeo, pMat); pPts.frustumCulled = false; scene.add(pPts);
+          }
+
+          function emit(x, y, z, vx, vy, vz, life, size, hex, grav = 0, drag = 1) {
+            const i = pHead, i3 = i * 3; pHead = (pHead + 1) % MAXP;
+            _c.setHex(hex);
+            pPos[i3] = x; pPos[i3 + 1] = y; pPos[i3 + 2] = z;
+            pVel[i3] = vx; pVel[i3 + 1] = vy; pVel[i3 + 2] = vz;
+            pCol[i3] = _c.r; pCol[i3 + 1] = _c.g; pCol[i3 + 2] = _c.b;
+            pLife[i] = pMax[i] = life; pS0[i] = size; pSize[i] = size; pAlpha[i] = 1; pGrav[i] = grav; pDrag[i] = drag;
+          }
+
+          function burst(p, hex, n, speed, life, size, grav = 0, drag = 1.5, up = 0) {
+            for (let i = 0; i < n; i++) {
+              const th = Math.random() * 6.2832, ph = Math.acos(2 * Math.random() - 1), s = speed * (0.3 + Math.random() * 0.7);
+              emit(p.x, p.y, p.z, Math.sin(ph) * Math.cos(th) * s, Math.cos(ph) * s + up, Math.sin(ph) * Math.sin(th) * s,
+                life * (0.6 + Math.random() * 0.6), size * (0.6 + Math.random() * 0.8), hex, grav, drag);
+            }
+          }
+
+          function sparks(p, nrm, hex, n, speed) {
+            for (let i = 0; i < n; i++) {
+              _dir.set(nrm.x + rnd(-0.9, 0.9), nrm.y + rnd(-0.5, 0.9), nrm.z + rnd(-0.9, 0.9)).normalize().multiplyScalar(speed * rnd(0.4, 1));
+              emit(p.x, p.y, p.z, _dir.x, _dir.y, _dir.z, rnd(0.3, 0.7), rnd(0.07, 0.14), i % 3 ? hex : 0xffffff, 14, 0.8);
+            }
+          }
+
+          function updateParticles(dt) {
+            for (let i = 0; i < MAXP; i++) {
+              if (pLife[i] <= 0) continue;
+              pLife[i] -= dt;
+              if (pLife[i] <= 0) { pAlpha[i] = 0; pSize[i] = 0; continue; }
+              const i3 = i * 3, k = Math.exp(-pDrag[i] * dt);
+              pVel[i3] *= k; pVel[i3 + 1] = pVel[i3 + 1] * k - pGrav[i] * dt; pVel[i3 + 2] *= k;
+              pPos[i3] += pVel[i3] * dt; pPos[i3 + 1] += pVel[i3 + 1] * dt; pPos[i3 + 2] += pVel[i3 + 2] * dt;
+              if (pPos[i3 + 1] < 0.03 && pGrav[i] > 0) {
+                pPos[i3 + 1] = 0.03; pVel[i3 + 1] *= -0.35; pVel[i3] *= 0.7; pVel[i3 + 2] *= 0.7;
+              }
+              const a = pLife[i] / pMax[i];
+              pAlpha[i] = a; pSize[i] = pS0[i] * (0.35 + 0.65 * a);
+            }
+            const A = pGeo.attributes;
+            A.position.needsUpdate = A.col.needsUpdate = A.size.needsUpdate = A.alpha.needsUpdate = true;
+          }
+
+          // ---------- tracers (moving streaks / railgun beam) ----------
+          const trGeo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+          trGeo.rotateX(Math.PI / 2); trGeo.translate(0, 0, 0.5);
+          const tracers = []; let trI = 0;
+
+          function initTracers() {
+            const mk = () => {
+              const m = new THREE.Mesh(trGeo, new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false}));
+              m.visible = false; m.frustumCulled = false; scene.add(m); return m;
+            };
+            for (let i = 0; i < 28; i++) {
+              tracers.push({core: mk(), glow: mk(), on: false, age: 0, from: new V3(), dir: new V3(), dist: 0, speed: 1, len: 1, rad: 0.02, fade: 0.1});
+            }
+          }
+
+          function fireTracer(w, from, to) {
+            const t = tracers[trI]; trI = (trI + 1) % tracers.length;
+            t.dir.subVectors(to, from); t.dist = t.dir.length();
+            if (t.dist < 0.05) return;
+            t.dir.divideScalar(t.dist); t.from.copy(from);
+            const rail = w.pierce, sc = w.pellets > 1;
+            t.speed = rail ? 1e5 : sc ? 220 : 320;
+            t.len = rail ? t.dist : sc ? 2.5 : 7;
+            t.rad = rail ? 0.045 : sc ? 0.012 : 0.02;
+            t.fade = rail ? 0.45 : 0.06;
+            t.age = 0; t.on = true; t.core.visible = t.glow.visible = true;
+            t.core.material.color.setHex(w.color).lerp(WHITE, 0.6).multiplyScalar(2);
+            t.glow.material.color.setHex(w.color).multiplyScalar(1.6);
+            if (rail) {
+              const step = Math.max(1.5, t.dist / 50);
+              for (let d = 2; d < Math.min(t.dist, 200); d += step) {
+                emit(from.x + t.dir.x * d, from.y + t.dir.y * d, from.z + t.dir.z * d, rnd(-1, 1), rnd(-1, 1), rnd(-1, 1), rnd(0.5, 0.9), 0.14, w.color, 0, 2);
+              }
+            }
+          }
+
+          function updateTracers(dt) {
+            for (const t of tracers) {
+              if (!t.on) continue;
+              t.age += dt;
+              const head = Math.min(t.dist, t.speed * t.age), tail = Math.max(0, head - t.len);
+              const arrive = t.dist / t.speed, f = t.age > arrive ? clamp(1 - (t.age - arrive) / t.fade, 0, 1) : 1;
+              if (f <= 0) { t.on = false; t.core.visible = t.glow.visible = false; continue; }
+              const L = Math.max(0.01, head - tail);
+              t.core.position.copy(t.from).addScaledVector(t.dir, tail);
+              t.core.lookAt(_tg.copy(t.core.position).add(t.dir));
+              t.glow.position.copy(t.core.position); t.glow.quaternion.copy(t.core.quaternion);
+              t.core.scale.set(t.rad * f, t.rad * f, L);
+              t.glow.scale.set(t.rad * 3.2 * f, t.rad * 3.2 * f, L);
+              t.core.material.opacity = f; t.glow.material.opacity = 0.35 * f;
+            }
+          }
+
+          // ---------- short dynamic lights (fixed pool, no shader recompiles) ----------
+          const lights = []; let ltI = 0;
+          function initLights() {
+            for (let i = 0; i < 4; i++) {
+              const l = new THREE.PointLight(0xffffff, 0, 14, 2);
+              l.userData = {t: 0, max: 1, i: 0}; scene.add(l); lights.push(l);
+            }
+          }
+          function flash(p, hex, intensity, life) {
+            const l = lights[ltI]; ltI = (ltI + 1) % lights.length;
+            l.position.copy(p); l.color.setHex(hex);
+            l.userData.t = l.userData.max = life; l.userData.i = intensity;
+          }
+          function updateLights(dt) {
+            for (const l of lights) {
+              const u = l.userData;
+              if (u.t > 0) { u.t -= dt; const k = Math.max(0, u.t / u.max); l.intensity = u.i * k * k; }
+              else l.intensity = 0;
+            }
+          }
+
+          // ---------- glowing scorch decals ----------
+          const decals = []; let dcI = 0;
+          function initDecals() {
+            const c = document.createElement('canvas'); c.width = c.height = 64;
+            const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+            g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.18, 'rgba(255,255,255,.7)');
+            g.addColorStop(0.45, 'rgba(255,255,255,.12)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+            x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+            const tex = new THREE.CanvasTexture(c), geo = new THREE.PlaneGeometry(0.6, 0.6);
+            for (let i = 0; i < 40; i++) {
+              const mat = new THREE.MeshBasicMaterial({map: tex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2});
+              const m = new THREE.Mesh(geo, mat); m.visible = false; m.frustumCulled = false; scene.add(m);
+              decals.push({m, mat, t: 0, max: 1});
+            }
+          }
+          function addDecal(p, n, hex) {
+            const d = decals[dcI]; dcI = (dcI + 1) % decals.length;
+            d.m.position.copy(p).addScaledVector(n, 0.03);
+            d.m.lookAt(_tg.copy(p).add(n)); d.m.rotateZ(rnd(0, 6.28));
+            d.m.scale.setScalar(rnd(0.7, 1.3));
+            d.mat.color.setHex(hex).multiplyScalar(1.6);
+            d.t = d.max = 5; d.m.visible = true;
+          }
+          function updateDecals(dt) {
+            for (const d of decals) {
+              if (d.t <= 0) continue;
+              d.t -= dt;
+              if (d.t <= 0) { d.m.visible = false; continue; }
+              d.mat.opacity = Math.min(1, d.t / d.max * 2.2);
+            }
+          }
+
+          // ---------- ground shockwave rings ----------
+          const rGeo = new THREE.RingGeometry(0.9, 1, 64); rGeo.rotateX(-Math.PI / 2);
+          const rings = []; let rgI = 0;
+          function initRings() {
+            for (let i = 0; i < 8; i++) {
+              const m = new THREE.Mesh(rGeo, new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide}));
+              m.visible = false; m.frustumCulled = false; scene.add(m); rings.push({m, t: 0, max: 1, r: 1});
+            }
+          }
+          export function shockwave(x, y, z, hex, maxR, life) {
+            const o = rings[rgI]; rgI = (rgI + 1) % rings.length;
+            o.m.position.set(x, y, z); o.m.material.color.setHex(hex).multiplyScalar(2.2);
+            o.t = 0; o.max = life; o.r = maxR; o.m.visible = true;
+          }
+          function updateRings(dt) {
+            for (const o of rings) {
+              if (!o.m.visible) continue;
+              o.t += dt;
+              const k = o.t / o.max;
+              if (k >= 1) { o.m.visible = false; continue; }
+              const s = 0.3 + o.r * (1 - Math.pow(1 - k, 3));
+              o.m.scale.set(s, 1, s); o.m.material.opacity = Math.pow(1 - k, 1.5) * 0.9;
+            }
+          }
+
+          // ---------- floating damage numbers + hurt indicators + screen flash (DOM) ----------
+          const nums = [], dirs = []; let numI = 0, dirI = 0, flashEl = null, flashA = 0;
+          function initDom() {
+            const st = document.createElement('style');
+            st.textContent =
+              '.fxn{position:absolute;left:0;top:0;font-weight:800;pointer-events:none;display:none;will-change:transform,opacity}' +
+              '.fxd{position:absolute;left:50%;top:50%;width:260px;height:260px;margin:-130px;border-radius:50%;opacity:0;pointer-events:none;' +
+              'background:conic-gradient(from -20deg,transparent 0deg,rgba(255,42,95,.95) 20deg,transparent 40deg,transparent 360deg);' +
+              '-webkit-mask:radial-gradient(circle,transparent 58%,#000 60%,#000 72%,transparent 74%);' +
+              'mask:radial-gradient(circle,transparent 58%,#000 60%,#000 72%,transparent 74%)}' +
+              '.fxf{position:absolute;inset:0;opacity:0;pointer-events:none}';
+            document.head.appendChild(st);
+            const host = $('hud');
+            flashEl = document.createElement('div'); flashEl.className = 'fxf'; host.prepend(flashEl);
+            for (let i = 0; i < 14; i++) {
+              const el = document.createElement('div'); el.className = 'fxn'; host.appendChild(el);
+              nums.push({el, t: 0, max: 0.9, p: new V3(), sum: 0, owner: null});
+            }
+            for (let i = 0; i < 4; i++) {
+              const el = document.createElement('div'); el.className = 'fxd'; host.appendChild(el);
+              dirs.push({el, t: 0});
+            }
+          }
+
+          export function flashScreen(hex, a) {
+            if (!flashEl) return;
+            flashEl.style.background = hexStr(hex); flashA = Math.max(flashA, a);
+          }
+
+          function showNumber(owner, p, dmg, color, size) {
+            for (const q of nums) {   // merge rapid hits on the same target (shotgun pellets)
+              if (q.owner === owner && q.t > q.max - 0.14) {
+                q.sum += dmg; q.el.textContent = Math.round(q.sum); q.t = q.max; return;
+              }
+            }
+            const n = nums[numI]; numI = (numI + 1) % nums.length;
+            n.owner = owner; n.sum = dmg; n.p.copy(p); n.p.x += rnd(-0.3, 0.3); n.p.z += rnd(-0.3, 0.3);
+            n.t = n.max = 0.9;
+            n.el.textContent = Math.round(dmg); n.el.style.color = color;
+            n.el.style.fontSize = size + 'px'; n.el.style.textShadow = '0 0 8px ' + color;
+          }
+
+          function hurtDir(src) {
+            if (!src) return;
+            const dx = src.x - player.pos.x, dz = src.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
+            const s = Math.sin(player.yaw), c = Math.cos(player.yaw);
+            const fw = (-s * dx - c * dz) / d, rt = (c * dx - s * dz) / d;
+            const o = dirs[dirI]; dirI = (dirI + 1) % dirs.length;
+            o.t = 1.3; o.el.style.transform = 'rotate(' + Math.atan2(rt, fw) + 'rad)';
+          }
+
+          function updateDom(dt) {
+            for (const n of nums) {
+              if (n.t <= 0) { if (n.el.style.display !== 'none') n.el.style.display = 'none'; continue; }
+              n.t -= dt;
+              const k = 1 - Math.max(0, n.t) / n.max;
+              _v.copy(n.p); _v.y += k * 1.4; _v.project(camera);
+              if (_v.z > 1 || n.t <= 0) { n.el.style.display = 'none'; continue; }
+              const x = (_v.x * 0.5 + 0.5) * innerWidth, y = (-_v.y * 0.5 + 0.5) * innerHeight;
+              n.el.style.display = 'block';
+              n.el.style.opacity = 1 - k * k;
+              n.el.style.transform = 'translate(' + x + 'px,' + y + 'px) translate(-50%,-50%) scale(' + (1 + 0.4 * (1 - k)) + ')';
+            }
+            for (const o of dirs) {
+              if (o.t <= 0) continue;
+              o.t -= dt; o.el.style.opacity = Math.max(0, Math.min(1, o.t / 1.3 * 1.4));
+            }
+            flashA = Math.max(0, flashA - dt * 2.2);
+            if (flashEl) flashEl.style.opacity = flashA;
+          }
+
+          // ---------- public API ----------
+          export function initEffects() {
+            initParticles(); initTracers(); initLights(); initDecals(); initRings(); initDom();
+
+            // --- player weapon hooks ---
+            chain(hooks, 'onShot', (w, mz) => {
+              camera.getWorldDirection(_dir);
+              const n = w.pellets > 1 ? 10 : 4;
+              for (let i = 0; i < n; i++) {
+                emit(mz.x, mz.y, mz.z, _dir.x * 9 + rnd(-2.5, 2.5), _dir.y * 9 + rnd(-2.5, 2.5), _dir.z * 9 + rnd(-2.5, 2.5), 0.2, 0.07, w.color, 0, 3);
+              }
+            });
+            chain(hooks, 'onTracer', (w, from, to) => fireTracer(w, from, to));
+            chain(hooks, 'onImpact', (p, kind, n) => {
+              const w = WEAPONS[player.weapon], multi = w.pellets > 1;
+              sparks(p, n, w.color, multi ? 3 : 7, w.pierce ? 14 : 9);
+              if (!multi || Math.random() < 0.5) addDecal(p, n, w.color);
+              if (!multi || Math.random() < 0.3) flash(_v.copy(p).addScaledVector(n, 0.4), w.color, w.pierce ? 60 : 22, 0.12);
+              if (w.pierce) burst(p, w.color, 22, 7, 0.6, 0.16, 6, 1.2);
+            });
+            chain(hooks, 'onHit', (tg, p, dmg, head, killed) => {
+              showNumber(tg, p, dmg, killed ? '#ff2a5f' : head ? '#ffd24a' : '#ffffff', killed ? 26 : head ? 22 : 17);
+            });
+            chain(hooks, 'onHurt', (amount, src) => { hurtDir(src); flashScreen(0xff1a4a, 0.22); });
+            chain(hooks, 'onDeath', () => { flashScreen(0xff0030, 0.55); });
+            chain(hooks, 'onDash', () => {
+              shockwave(player.pos.x, 0.06, player.pos.z, 0x00ffff, 4, 0.4);
+              flashScreen(0x00ffff, 0.1);
+            });
+            chain(hooks, 'onJump', () => shockwave(player.pos.x, 0.05, player.pos.z, 0x00ffff, 1.6, 0.3));
+            chain(hooks, 'onLand', sp => {
+              shockwave(player.pos.x, 0.05, player.pos.z, 0x00ffff, 2 + sp * 0.2, 0.35);
+              addShake(Math.min(0.4, sp * 0.02));
+            });
+            chain(hooks, 'onPickup', kind => flashScreen(PCOL[kind] || 0xffffff, 0.18));
+
+            // --- enemy hooks ---
+            chain(eHooks, 'onSpawn', e => {
+              for (let i = 0; i < 22; i++) {
+                emit(e.pos.x + rnd(-0.5, 0.5), 0.1 + rnd(0, 0.6), e.pos.z + rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(6, 12), rnd(-0.5, 0.5), 0.8, 0.16, e.T.color, 0, 1);
+              }
+              flash(_v.set(e.pos.x, 1.2, e.pos.z), e.T.color, 70, 0.4);
+            });
+            chain(eHooks, 'onEnemyHit', (e, p, head) => {
+              burst(p, head ? 0xffd24a : e.T.color, head ? 14 : 7, 6, 0.4, 0.1, 10, 1.5);
+            });
+            chain(eHooks, 'onKill', e => {
+              const c = e.T.color, big = e.type === 'brute';
+              _v.set(e.pos.x, e.pos.y + e.h * 0.5, e.pos.z);
+              burst(_v, c, big ? 90 : 38, big ? 12 : 8, 0.9, 0.22, 6, 1.2);
+              burst(_v, 0xffffff, big ? 30 : 12, 10, 0.5, 0.1, 12, 0.8);
+              shockwave(e.pos.x, 0.06, e.pos.z, c, big ? 14 : 7, 0.6);
+              flash(_v, c, big ? 200 : 100, 0.35);
+              const d = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z);
+              if (big) addShake(0.5); else if (d < 10) addShake(0.15);
+            });
+            chain(eHooks, 'onEnemyShot', (e, from, color) => burst(from, color, 6, 5, 0.25, 0.12, 0, 3));
+            chain(eHooks, 'onBoltHit', (p, color) => {
+              burst(p, color, 10, 6, 0.35, 0.1, 8, 1.5);
+              flash(p, color, 30, 0.15);
+            });
+            chain(eHooks, 'onWave', () => {
+              shockwave(0, 0.07, 0, 0xff00ff, R * 1.2, 1.4);
+              shockwave(0, 0.07, 0, 0x00ffff, R * 0.8, 1.0);
+              flashScreen(0xff00ff, 0.15);
+            });
+            chain(eHooks, 'onWaveClear', () => {
+              shockwave(0, 0.07, 0, 0x00ffff, R * 1.2, 1.6);
+              flashScreen(0x00ffff, 0.18);
+            });
+            chain(eHooks, 'onDrop', (kind, pos) => burst(pos, PCOL[kind] || 0xffffff, 14, 4, 0.7, 0.12, 0, 1.5, 2));
+          }
+
+          export function resetEffects() {
+            pLife.fill(0); pSize.fill(0); pAlpha.fill(0);
+            tracers.forEach(t => { t.on = false; t.core.visible = t.glow.visible = false; });
+            decals.forEach(d => { d.t = 0; d.m.visible = false; });
+            rings.forEach(o => o.m.visible = false);
+            lights.forEach(l => { l.userData.t = 0; l.intensity = 0; });
+            nums.forEach(n => { n.t = 0; n.owner = null; n.el.style.display = 'none'; });
+            dirs.forEach(o => { o.t = 0; o.el.style.opacity = 0; });
+            flashA = 0; if (flashEl) flashEl.style.opacity = 0;
+          }
+
+          export function updateEffects(t, dt) {
+            dt = Math.min(dt, 0.05);
+            pMat.uniforms.scale.value = innerHeight * Math.min(devicePixelRatio, 2) / (2 * Math.tan(camera.fov * Math.PI / 360));
+            updateParticles(dt); updateTracers(dt); updateLights(dt);
+            updateDecals(dt); updateRings(dt); updateDom(dt);
+          }
+          EOF_FX
+
+      - name: Write audio.js
+        run: |
+          cat > game/www/js/audio.js <<'EOF_AUDIO'
+          import {clamp, rnd} from './core.js';
+          import {hooks, player} from './player.js';
+          import {eHooks, waves} from './enemies.js';
+
+          // fully procedural WebAudio: no audio files needed
+          let ctx = null, master, comp, revSend, nbuf, musG, muted = false;
+          let step = 0, nextT = 0, inten = 0.3;
+          const BPM = 104, STEP = 60 / BPM / 4;
+          const chain = (o, n, f) => { const p = o[n]; o[n] = (...a) => { p(...a); f(...a); }; };
+          const mf = n => 440 * Math.pow(2, (n - 69) / 12);
+          const now = () => ctx.currentTime;
+
+          export function initAudio() {
+            if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            ctx = new AC();
+            comp = ctx.createDynamicsCompressor();
+            comp.threshold.value = -14; comp.ratio.value = 6; comp.connect(ctx.destination);
+            master = ctx.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(comp);
+
+            nbuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+            const nd = nbuf.getChannelData(0);
+            for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+
+            // generated reverb impulse
+            const len = Math.floor(ctx.sampleRate * 1.8), ib = ctx.createBuffer(2, len, ctx.sampleRate);
+            for (let c = 0; c < 2; c++) {
+              const d = ib.getChannelData(c);
+              for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+            }
+            const conv = ctx.createConvolver(); conv.buffer = ib;
+            revSend = ctx.createGain(); revSend.gain.value = 0.5; revSend.connect(conv);
+            const rg = ctx.createGain(); rg.gain.value = 0.35; conv.connect(rg); rg.connect(master);
+
+            // music bus
+            musG = ctx.createGain(); musG.gain.value = 0; musG.connect(master);
+
+            // dark ambient drone
+            const dg = ctx.createGain(); dg.gain.value = 0.05; dg.connect(master);
+            const df = ctx.createBiquadFilter(); df.type = 'lowpass'; df.frequency.value = 160; df.connect(dg);
+            [55, 55.45, 82.5].forEach(f => {
+              const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.connect(df); o.start();
+            });
+            const lfo = ctx.createOscillator(), lg = ctx.createGain();
+            lfo.frequency.value = 0.12; lg.gain.value = 70; lfo.connect(lg); lg.connect(df.frequency); lfo.start();
+
+            nextT = now() + 0.2;
+            document.addEventListener('visibilitychange', () => {
+              if (!ctx) return;
+              if (document.hidden) ctx.suspend(); else ctx.resume();
+            });
+          }
+
+          export function setMuted(m) { muted = m; if (master) master.gain.value = m ? 0 : 0.8; }
+
+          // ---------- synth helpers ----------
+          function bus(vol = 1, pan = 0, wet = 0.2) {
+            const g = ctx.createGain(); g.gain.value = vol;
+            let node = g;
+            if (ctx.createStereoPanner) {
+              const p = ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); g.connect(p); node = p;
+            }
+            node.connect(master);
+            if (wet > 0) { const w = ctx.createGain(); w.gain.value = wet; node.connect(w); w.connect(revSend); }
+            return g;
+          }
+          function tone(dest, type, f0, f1, t0, dur, vol, att = 0.002) {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = type;
+            o.frequency.setValueAtTime(Math.max(1, f0), t0);
+            o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t0 + dur);
+            g.gain.setValueAtTime(0.0001, t0);
+            g.gain.linearRampToValueAtTime(vol, t0 + att);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+            o.connect(g); g.connect(dest); o.start(t0); o.stop(t0 + dur + 0.05);
+          }
+          function noise(dest, t0, dur, vol, ftype, f0, f1, q = 1) {
+            const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+            s.buffer = nbuf; f.type = ftype; f.Q.value = q;
+            f.frequency.setValueAtTime(Math.max(20, f0), t0);
+            f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
+            g.gain.setValueAtTime(vol, t0);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+            s.connect(f); f.connect(g); g.connect(dest); s.start(t0, Math.random() * 1.5, dur + 0.05);
+          }
+          // spatial info for a world position (pan + distance volume)
+          function spat(p) {
+            const dx = p.x - player.head.x, dy = p.y - player.head.y, dz = p.z - player.head.z;
+            const d = Math.hypot(dx, dy, dz) || 1;
+            const rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
+            return {pan: (dx * rx + dz * rz) / d * 0.9, vol: 1 / (1 + d * 0.07)};
+          }
+          const on = f => (...a) => { if (ctx && ctx.state === 'running' && !muted) f(...a); };
+
+          // ---------- weapon sounds ----------
+          function sndShot(cur) {
+            const t = now(), r = rnd(0.94, 1.06);
+            if (cur === 0) {
+              const b = bus(0.55, 0, 0.18);
+              tone(b, 'sawtooth', 1500 * r, 160, t, 0.11, 0.5);
+              tone(b, 'square', 220, 70, t, 0.09, 0.3);
+              noise(b, t, 0.07, 0.5, 'highpass', 3000, 6000, 0.7);
+            } else if (cur === 1) {
+              const b = bus(0.9, 0, 0.35);
+              noise(b, t, 0.4, 1, 'lowpass', 2600, 140, 0.8);
+              tone(b, 'sawtooth', 160 * r, 38, t, 0.35, 0.9);
+              tone(b, 'square', 700, 90, t, 0.12, 0.4);
+              noise(b, t + 0.28, 0.06, 0.5, 'bandpass', 1800, 1800, 3);
+              noise(b, t + 0.42, 0.06, 0.5, 'bandpass', 1300, 1300, 3);
+            } else {
+              const b = bus(1, 0, 0.6);
+              tone(b, 'sawtooth', 90, 45, t, 0.5, 0.9);
+              tone(b, 'sawtooth', 2800, 50, t, 0.45, 0.35);
+              tone(b, 'sine', 5000, 200, t, 0.25, 0.5);
+              noise(b, t, 0.5, 0.8, 'bandpass', 6000, 300, 0.9);
+            }
+          }
+
+          // ---------- music step sequencer ----------
+          const BASS = [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0];
+          const PENT = [0, 3, 5, 7, 10, 12];
+          function playStep(s, t) {
+            const root = [33, 29, 31, 28][(s >> 4) & 3], st = s & 15;
+            if (BASS[st]) {
+              const f = mf(root + (st === 6 || st === 14 ? 12 : 0));
+              const o = ctx.createOscillator(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
+              o.type = 'sawtooth'; o.frequency.value = f;
+              fl.type = 'lowpass'; fl.frequency.setValueAtTime(900, t); fl.frequency.exponentialRampToValueAtTime(180, t + 0.18);
+              g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+              o.connect(fl); fl.connect(g); g.connect(musG); o.start(t); o.stop(t + 0.25);
+            }
+            if (st % 4 === 0 && (inten > 0.6 || st % 8 === 0)) tone(musG, 'sine', 130, 42, t, 0.16, 0.8);
+            if (st % 4 === 2 || (inten > 0.7 && st % 2 === 1)) noise(musG, t, 0.04, inten > 0.7 ? 0.2 : 0.1, 'highpass', 7000, 9000, 0.7);
+            if (inten > 0.7 && st % 2 === 0) {
+              const n = root + 36 + PENT[(s * 5) % 6];
+              const o = ctx.createOscillator(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
+              o.type = 'square'; o.frequency.value = mf(n);
+              fl.type = 'lowpass'; fl.frequency.setValueAtTime(2200, t); fl.frequency.exponentialRampToValueAtTime(600, t + 0.12);
+              g.gain.setValueAtTime(0.07, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+              o.connect(fl); fl.connect(g); g.connect(musG); o.start(t); o.stop(t + 0.16);
+            }
+          }
+
+          export function updateAudio(t, dt) {
+            if (!ctx || ctx.state !== 'running') return;
+            const tg = player.dead ? 0 : waves.state === 'active' ? 1 : 0.35;
+            inten += (tg - inten) * (1 - Math.exp(-1.2 * dt));
+            musG.gain.setTargetAtTime(player.dead ? 0 : 0.1 + 0.55 * inten, now(), 0.3);
+            if (nextT < now() - 0.5) nextT = now() + 0.05;
+            while (nextT < now() + 0.15) { playStep(step++, nextT); nextT += STEP; }
+          }
+
+          // ---------- UI sound for buttons ----------
+          export function uiClick() {
+            if (!ctx || muted) return;
+            const t = now(), b = bus(0.3, 0, 0.1);
+            tone(b, 'square', 900, 1400, t, 0.05, 0.4);
+          }
+
+          // ---------- bind hooks (safe before audio is unlocked) ----------
+          chain(hooks, 'onShot', on((w, mz, cur) => sndShot(cur)));
+          chain(hooks, 'onReload', on(w => {
+            const t = now(), b = bus(0.5, 0, 0.1);
+            noise(b, t + 0.1, 0.05, 0.6, 'bandpass', 1400, 1400, 4);
+            tone(b, 'sine', 200, 900, t + 0.1, w.reload * 0.8, 0.12, 0.05);
+            noise(b, t + w.reload * 0.5, 0.06, 0.6, 'bandpass', 900, 900, 3);
+          }));
+          chain(hooks, 'onReloadDone', on(() => {
+            const t = now(), b = bus(0.6, 0, 0.15);
+            noise(b, t, 0.07, 0.9, 'bandpass', 1100, 700, 3);
+            tone(b, 'sine', 900, 1800, t, 0.1, 0.25);
+          }));
+          chain(hooks, 'onSwap', on(() => noise(bus(0.35, 0, 0.1), now(), 0.22, 0.35, 'bandpass', 500, 2500, 1.2)));
+          chain(hooks, 'onEmpty', on(() => {
+            const t = now(), b = bus(0.4, 0, 0);
+            noise(b, t, 0.03, 0.5, 'highpass', 2500, 2500, 1);
+            tone(b, 'square', 300, 200, t, 0.03, 0.1);
+          }));
+          chain(hooks, 'onStep', on(sprint => {
+            const t = now(), b = bus(sprint ? 0.28 : 0.18, rnd(-0.1, 0.1), 0.05);
+            noise(b, t, 0.07, 1, 'lowpass', 500, 150, 0.7);
+            tone(b, 'sine', 90, 50, t, 0.07, 0.5);
+          }));
+          chain(hooks, 'onJump', on(() => noise(bus(0.25, 0, 0.1), now(), 0.18, 0.5, 'bandpass', 400, 1200, 1)));
+          chain(hooks, 'onLand', on(sp => {
+            const t = now(), b = bus(clamp(sp / 14, 0.2, 1) * 0.6, 0, 0.1);
+            noise(b, t, 0.15, 0.8, 'lowpass', 300, 100, 0.7);
+            tone(b, 'sine', 80, 35, t, 0.2, 0.7);
+          }));
+          chain(hooks, 'onDash', on(() => {
+            const t = now(), b = bus(0.5, 0, 0.3);
+            noise(b, t, 0.3, 0.7, 'bandpass', 800, 6000, 1.5);
+            tone(b, 'sine', 600, 80, t, 0.25, 0.25);
+          }));
+          chain(hooks, 'onHurt', on(() => {
+            const t = now(), b = bus(0.8, 0, 0.2);
+            tone(b, 'sawtooth', 140, 50, t, 0.25, 0.5);
+            noise(b, t, 0.2, 0.6, 'lowpass', 1200, 200, 0.8);
+          }));
+          chain(hooks, 'onDeath', on(() => {
+            const t = now(), b = bus(0.9, 0, 0.5);
+            tone(b, 'sawtooth', 300, 20, t, 1.6, 0.7);
+            noise(b, t, 1.4, 0.7, 'lowpass', 3000, 60, 0.8);
+          }));
+          chain(hooks, 'onPickup', on(kind => {
+            const t = now(), b = bus(0.4, 0, 0.3);
+            if (kind === 'hp') [523, 659, 784].forEach((f, i) => tone(b, 'sine', f, f, t + i * 0.06, 0.18, 0.3));
+            else if (kind === 'shield') [880, 1320].forEach((f, i) => tone(b, 'triangle', f, f * 1.01, t + i * 0.07, 0.3, 0.3));
+            else {
+              noise(b, t, 0.04, 0.6, 'bandpass', 1500, 1500, 4);
+              noise(b, t + 0.07, 0.04, 0.6, 'bandpass', 1100, 1100, 4);
+              tone(b, 'sine', 1200, 1800, t + 0.1, 0.12, 0.25);
+            }
+          }));
+          chain(hooks, 'onHit', on((tg, p, dmg, head, killed) => {
+            const t = now(), b = bus(0.35, 0, 0.1);
+            if (head) tone(b, 'sine', 1800, 1800, t, 0.1, 0.35);
+            else tone(b, 'triangle', 1100, 900, t, 0.05, 0.3);
+            if (killed) {
+              tone(b, 'sine', 140, 60, t, 0.2, 0.6);
+              tone(b, 'sine', 2400, 2400, t + 0.02, 0.12, 0.25);
+            }
+          }));
+
+          // --- enemy sounds (positional) ---
+          chain(eHooks, 'onEnemyShot', on((e, from) => {
+            const s = spat(from), t = now();
+            if (e.type === 'brute') {
+              const b = bus(0.7 * s.vol + 0.1, s.pan, 0.3);
+              tone(b, 'sawtooth', 200, 60, t, 0.35, 0.6);
+              noise(b, t, 0.25, 0.4, 'lowpass', 1500, 200, 0.8);
+            } else if (e.type === 'drone') {
+              tone(bus(0.35 * s.vol + 0.05, s.pan, 0.2), 'sawtooth', 900, 300, t, 0.15, 0.4);
+            } else {
+              tone(bus(0.4 * s.vol + 0.05, s.pan, 0.2), 'sawtooth', 500, 150, t, 0.18, 0.45);
+            }
+          }));
+          chain(eHooks, 'onKill', on(e => {
+            const s = spat(e.pos), t = now(), big = e.type === 'brute';
+            const b = bus(0.9 * (0.4 + 0.6 * s.vol), s.pan, 0.4);
+            noise(b, t, big ? 0.9 : 0.5, 0.8, 'lowpass', 3000, 100, 0.8);
+            tone(b, 'sawtooth', 260, 30, t, big ? 0.7 : 0.4, 0.6);
+            if (big) tone(b, 'sine', 70, 28, t, 0.9, 0.9);
+          }));
+          chain(eHooks, 'onBoltHit', on(p => {
+            const s = spat(p);
+            noise(bus(0.3 * s.vol + 0.03, s.pan, 0.1), now(), 0.08, 0.8, 'highpass', 4000, 6000, 0.7);
+          }));
+          chain(eHooks, 'onSpawn', on(e => {
+            const s = spat(e.pos);
+            tone(bus(0.25 * s.vol + 0.03, s.pan, 0.3), 'sine', 200, 1400, now(), 0.5, 0.5, 0.05);
+          }));
+          chain(eHooks, 'onWave', on(() => {
+            const t = now(), b = bus(0.6, 0, 0.4);
+            tone(b, 'sawtooth', 110, 220, t, 0.6, 0.4, 0.05);
+            [220, 330, 440].forEach((f, i) => tone(b, 'square', f, f, t + i * 0.12, 0.2, 0.15));
+            noise(b, t, 0.6, 0.3, 'bandpass', 400, 4000, 1);
+          }));
+          chain(eHooks, 'onWaveClear', on(() => {
+            const t = now(), b = bus(0.5, 0, 0.5);
+            [523, 659, 784, 1046].forEach((f, i) => tone(b, 'triangle', f, f, t + i * 0.08, 0.5, 0.25));
+          }));
+          chain(eHooks, 'onDrop', on((kind, p) => {
+            const s = spat(p);
+            tone(bus(0.15 * s.vol + 0.02, s.pan, 0.3), 'sine', 1568, 1568, now(), 0.15, 0.3);
+          }));
+          EOF_AUDIO
+      - name: Write main.js
+        run: |
+          cat > game/www/js/main.js <<'EOF_MAIN'
+          import {camera, render, $} from './core.js';
+          import {buildWorld, updateWorld} from './world.js';
+          import {input, hooks, player, initPlayer, resetPlayer, updatePlayer, look} from './player.js';
+          import {enemies, eHooks, waves, remaining, initEnemies, startWaves, updateEnemies} from './enemies.js';
+          import {initEffects, resetEffects, updateEffects} from './effects.js';
+          import {initAudio, updateAudio, uiClick} from './audio.js';
+
+          // ---------- state ----------
+          const hex = h => '#' + h.toString(16).padStart(6, '0');
+          const chain = (o, n, f) => { const p = o[n]; o[n] = (...a) => { p(...a); f(...a); }; };
+          const E = {sc: $('sc'), wv: $('wv'), kf: $('kf'), radar: $('radar'), msg: $('msg'), mt: $('mt'), go: $('go'), stick: $('stick'), knob: $('knob')};
+          const rx = E.radar.getContext('2d');
+          const title = E.msg.querySelector('h1');
+          let state = 'boot', failed = false, score = 0, best = 0, combo = 0, comboT = 0, overT = 0;
+          let bannerT = 0, bannerTxt = '', wvTxt = '', scKey = -1, frameN = 0, last = performance.now(), clock = 0;
+          try { best = +localStorage.getItem('neonArenaBest') || 0; } catch (e) {}
+          const buzz = ms => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} };
+
+          // ---------- score / banner / kill feed ----------
+          function setScore(v) {
+            score = v;
+            if (scKey !== v) { scKey = v; E.sc.textContent = 'SCORE ' + v; }
+          }
+          function banner(txt, sec) { bannerTxt = txt; bannerT = sec; }
+          function setWave(s) { if (s !== wvTxt) { wvTxt = s; E.wv.textContent = s; } }
+
+          const feed = []; let feedDirty = false;
+          function feedAdd(txt, color) {
+            feed.unshift({txt, color, t: 3.2});
+            if (feed.length > 4) feed.pop();
+            feedDirty = true;
+          }
+          function feedUpdate(dt) {
+            for (let i = feed.length - 1; i >= 0; i--) {
+              feed[i].t -= dt;
+              if (feed[i].t <= 0) { feed.splice(i, 1); feedDirty = true; }
+            }
+            if (!feedDirty) return;
+            feedDirty = false;
+            E.kf.innerHTML = feed.map(f => '<div style="color:' + f.color + ';text-shadow:0 0 8px ' + f.color + '">' + f.txt + '</div>').join('');
+          }
+
+          // ---------- radar ----------
+          function drawRadar() {
+            const c = rx, S = 180, h = S / 2, K = h / 38;
+            c.clearRect(0, 0, S, S);
+            c.lineWidth = 1.5; c.strokeStyle = 'rgba(0,255,255,.28)';
+            c.beginPath(); c.arc(h, h, h * 0.5, 0, 7); c.stroke();
+            c.beginPath(); c.arc(h, h, h - 2, 0, 7); c.stroke();
+            c.beginPath(); c.moveTo(h, 0); c.lineTo(h, S); c.moveTo(0, h); c.lineTo(S, h); c.stroke();
+            const s = Math.sin(player.yaw), co = Math.cos(player.yaw);
+            for (const e of enemies) {
+              if (!e.alive) continue;
+              const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z;
+              let fw = -s * dx - co * dz, rt = co * dx - s * dz;
+              const d = Math.hypot(fw, rt);
+              if (d > 38) { fw *= 38 / d; rt *= 38 / d; }
+              c.fillStyle = c.shadowColor = hex(e.T.color); c.shadowBlur = 7;
+              c.beginPath(); c.arc(h + rt * K, h - fw * K, e.type === 'brute' ? 5.5 : 3.4, 0, 7); c.fill();
+            }
+            c.shadowBlur = 0; c.fillStyle = '#fff';
+            c.beginPath(); c.moveTo(h, h - 9); c.lineTo(h - 6, h + 6); c.lineTo(h, h + 3); c.lineTo(h + 6, h + 6); c.closePath(); c.fill();
+          }
+
+          // ---------- gameplay hooks ----------
+          chain(eHooks, 'onKill', e => {
+            combo = comboT > 0 ? combo + 1 : 1; comboT = 3;
+            const mult = 1 + Math.min(combo - 1, 9) * 0.1, pts = Math.round(e.score * mult);
+            setScore(score + pts);
+            feedAdd(e.type.toUpperCase() + ' +' + pts + (combo > 1 ? '  x' + mult.toFixed(1) : ''), hex(e.T.color));
+          });
+          chain(hooks, 'onHit', (tg, p, dmg, head, killed) => {
+            if (killed && head) { setScore(score + 50); feedAdd('HEADSHOT +50', '#ffd24a'); }
+          });
+          chain(eHooks, 'onWave', n => banner(n % 5 === 0 ? 'WAVE ' + n + ' · BOSS' : 'WAVE ' + n, 2.4));
+          chain(eHooks, 'onWaveClear', n => {
+            const b = 250 + n * 50;
+            setScore(score + b); banner('WAVE CLEARED  +' + b, 2.6);
+          });
+          chain(hooks, 'onHurt', () => buzz(30));
+          chain(hooks, 'onDash', () => buzz(12));
+          chain(hooks, 'onDeath', () => { buzz(220); state = 'dying'; overT = 0; releaseInput(); });
+
+          // ---------- start / game over ----------
+          function menuText() {
+            title.textContent = 'NEON ARENA';
+            E.mt.innerHTML = 'Survive endless waves<br><span style="font-size:13px;color:#0ffa">Left stick: move &nbsp;·&nbsp; Drag screen: aim<br>Push stick to the edge to sprint</span>' +
+              (best ? '<br><span style="color:#f0f">BEST ' + best + '</span>' : '');
+            E.go.textContent = 'START';
+          }
+          function begin() {
+            if (failed || state === 'boot' || state === 'play') return;
+            initAudio(); uiClick();
+            E.msg.style.display = 'none';
+            resetEffects(); resetPlayer(); startWaves();
+            setScore(0); combo = 0; comboT = 0; feed.length = 0; feedDirty = true; bannerT = 0; wvTxt = '';
+            releaseInput();
+            state = 'play';
+          }
+          function showOver() {
+            state = 'over';
+            const nb = score > best;
+            if (nb) { best = score; try { localStorage.setItem('neonArenaBest', best); } catch (e) {} }
+            title.textContent = 'GAME OVER';
+            E.mt.innerHTML = 'WAVE REACHED <b style="color:#f0f">' + waves.n + '</b><br>SCORE <b style="color:#fff">' + score + '</b><br>' +
+              (nb ? '<span style="color:#ffd24a">NEW BEST!</span>' : '<span style="color:#0ffa">BEST ' + best + '</span>');
+            E.go.textContent = 'RETRY';
+            E.msg.style.display = 'flex';
+          }
+          E.go.addEventListener('click', begin);
+
+          // ---------- touch controls ----------
+          const SR = 48, DZ = 0.12;
+          let stickId = -1, sx = 0, sy = 0, lookId = -1, lx = 0, ly = 0, fireId = -1, fx = 0, fy = 0;
+
+          function releaseInput() {
+            input.moveX = input.moveY = 0; input.fire = false;
+            input.jump = input.reload = input.swap = input.dash = false;
+            stickId = lookId = fireId = -1;
+            E.knob.style.transform = '';
+          }
+          function cap(el, id) { try { el.setPointerCapture(id); } catch (e) {} }
+
+          // movement stick
+          function stickMove(e) {
+            const dx = e.clientX - sx, dy = e.clientY - sy, d = Math.hypot(dx, dy) || 1, k = Math.min(1, d / SR);
+            const nx = dx / d * k, ny = dy / d * k;
+            E.knob.style.transform = 'translate(' + nx * SR + 'px,' + ny * SR + 'px)';
+            let mx = nx, my = -ny;
+            const m = Math.hypot(mx, my);
+            if (m < DZ) { mx = my = 0; }
+            else { const s = (m - DZ) / (1 - DZ) / m; mx *= s; my *= s; }
+            input.moveX = mx; input.moveY = my;
+          }
+          E.stick.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            if (state !== 'play' || stickId !== -1) return;
+            const r = E.stick.getBoundingClientRect();
+            sx = r.left + r.width / 2; sy = r.top + r.height / 2;
+            stickId = e.pointerId; cap(E.stick, stickId); stickMove(e);
+          });
+          E.stick.addEventListener('pointermove', e => { if (e.pointerId === stickId) stickMove(e); });
+          const stickEnd = e => {
+            if (e.pointerId !== stickId) return;
+            stickId = -1; input.moveX = input.moveY = 0; E.knob.style.transform = '';
+          };
+          E.stick.addEventListener('pointerup', stickEnd);
+          E.stick.addEventListener('pointercancel', stickEnd);
+
+          // fire button: hold to shoot, drag the same finger to aim
+          const fireEl = $('fire');
+          fireEl.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            if (state !== 'play' || fireId !== -1) return;
+            fireId = e.pointerId; fx = e.clientX; fy = e.clientY; cap(fireEl, fireId);
+            input.fire = true; fireEl.style.transform = 'scale(.92)';
+          });
+          fireEl.addEventListener('pointermove', e => {
+            if (e.pointerId !== fireId) return;
+            look(e.clientX - fx, e.clientY - fy); fx = e.clientX; fy = e.clientY;
+          });
+          const fireEnd = e => {
+            if (e.pointerId !== fireId) return;
+            fireId = -1; input.fire = false; fireEl.style.transform = '';
+          };
+          fireEl.addEventListener('pointerup', fireEnd);
+          fireEl.addEventListener('pointercancel', fireEnd);
+
+          // one-shot buttons
+          [['jump', 'jump'], ['rld', 'reload'], ['swp', 'swap'], ['dash', 'dash']].forEach(([id, key]) => {
+            const el = $(id);
+            el.addEventListener('pointerdown', e => {
+              e.preventDefault();
+              if (state !== 'play') return;
+              input[key] = true; el.style.transform = 'scale(.9)';
+            });
+            const up = () => { el.style.transform = ''; };
+            el.addEventListener('pointerup', up);
+            el.addEventListener('pointercancel', up);
+          });
+
+          // free look: any finger on the open screen
+          addEventListener('pointerdown', e => {
+            if (state !== 'play' || lookId !== -1) return;
+            if (e.target.closest && e.target.closest('#stick,.btn,#msg')) return;
+            lookId = e.pointerId; lx = e.clientX; ly = e.clientY;
+          });
+          addEventListener('pointermove', e => {
+            if (e.pointerId !== lookId) return;
+            look(e.clientX - lx, e.clientY - ly); lx = e.clientX; ly = e.clientY;
+          });
+          const lookEnd = e => { if (e.pointerId === lookId) lookId = -1; };
+          addEventListener('pointerup', lookEnd);
+          addEventListener('pointercancel', lookEnd);
+
+          // keep the browser from stealing gestures
+          addEventListener('touchmove', e => e.preventDefault(), {passive: false});
+          addEventListener('contextmenu', e => e.preventDefault());
+          addEventListener('blur', releaseInput);
+          document.addEventListener('visibilitychange', () => { if (document.hidden) releaseInput(); });
+
+          // ---------- HUD ----------
+          function hud(dt) {
+            if (state === 'play') {
+              comboT = Math.max(0, comboT - dt); bannerT = Math.max(0, bannerT - dt);
+              let s = '';
+              if (bannerT > 0) s = bannerTxt;
+              else if (waves.state === 'active') s = 'WAVE ' + waves.n + '  ·  ' + remaining() + ' LEFT';
+              else if (waves.state === 'intermission') s = waves.n ? 'NEXT WAVE ' + Math.ceil(waves.timer) : 'GET READY';
+              setWave(s);
+            } else if (state === 'dying') setWave('');
+            feedUpdate(dt);
+            if ((frameN++ & 1) === 0) drawRadar();
+          }
+
+          // ---------- main loop ----------
+          function menuCam(t) {
+            const a = t * 0.12;
+            camera.position.set(Math.cos(a) * 30, 10, Math.sin(a) * 30);
+            camera.lookAt(0, 5, 0);
+          }
+          function fail(err) {
+            if (failed) return;
+            failed = true;
+            E.msg.style.display = 'flex';
+            E.mt.textContent = 'Error: ' + (err && err.message ? err.message : err);
+          }
+          function frame(now) {
+            requestAnimationFrame(frame);
+            try {
+              const dt = Math.min((now - last) / 1000, 0.05); last = now; clock += dt;
+              if (state === 'play' || state === 'dying' || state === 'over') {
+                updatePlayer(clock, dt); updateEnemies(clock, dt);
+                if (state === 'dying') { overT += dt; if (overT > 1.8) showOver(); }
+              } else menuCam(clock);
+              updateWorld(clock, dt, player.pos.x, player.pos.z);
+              updateEffects(clock, dt); updateAudio(clock, dt);
+              hud(dt);
+              render(clock);
+            } catch (err) { fail(err); }
+          }
+
+          try {
+            buildWorld(); initPlayer(); initEnemies(); initEffects();
+            menuText(); state = 'menu';
+            requestAnimationFrame(frame);
+          } catch (err) { fail(err); }
+          EOF_MAIN
+
+      - name: Write Capacitor config
+        run: |
+          cat > game/capacitor.config.json <<'EOF_CAP'
+          {
+            "appId": "com.neon.arena",
+            "appName": "Neon Arena",
+            "webDir": "www",
+            "backgroundColor": "#000000",
+            "server": {"androidScheme": "https"},
+            "android": {"allowMixedContent": false}
+          }
+          EOF_CAP
+
+      - name: Add Android platform
+        working-directory: game
+        run: |
+          npx cap add android
+          # lock to landscape
+          sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape"/' android/app/src/main/AndroidManifest.xml
+          # immersive fullscreen + keep screen on + notch support
+          mkdir -p android/app/src/main/java/com/neon/arena
+          cat > android/app/src/main/java/com/neon/arena/MainActivity.java <<'EOF_JAVA'
+          package com.neon.arena;
+
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.WindowManager;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+              if (Build.VERSION.SDK_INT >= 28) {
+                getWindow().getAttributes().layoutInDisplayCutoutMode =
+                  WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+              }
+              immersive();
+            }
+
+            @Override
+            public void onWindowFocusChanged(boolean focus) {
+              super.onWindowFocusChanged(focus);
+              if (focus) immersive();
+            }
+
+            private void immersive() {
+              WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+              WindowInsetsControllerCompat c = new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+              c.hide(WindowInsetsCompat.Type.systemBars());
+              c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+          }
+          EOF_JAVA
+          npx cap sync android
+
+      - name: Build APK
+        working-directory: game/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeonArena-APK
+          path: game/android/app/build/outputs/apk/debug/app-debug.apk
+
